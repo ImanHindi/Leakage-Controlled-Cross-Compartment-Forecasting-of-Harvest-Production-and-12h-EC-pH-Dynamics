@@ -1,79 +1,112 @@
-# Power BI dashboard
+# Power BI Dashboard
 
 `LiveGreenHouseMonitoring.pbix` is the Power BI dashboard developed for the
-Paper 2 monitoring and forecasting workflow.
+Paper 2 greenhouse monitoring and forecasting workflow.
 
 ## Purpose
 
-The dashboard visualizes greenhouse measurements and model outputs supplied
-through ThingSpeak, including:
+The dashboard visualizes greenhouse measurements and model outputs delivered
+through ThingSpeak. Depending on the configured channel fields, the report may
+include:
 
 - air temperature;
 - relative humidity;
-- CO2 concentration;
-- total PAR;
-- measured drain EC;
-- predicted drain EC at +12 hours;
+- carbon-dioxide concentration;
+- total photosynthetically active radiation;
+- measured drain electrical conductivity;
+- predicted drain electrical conductivity at +12 hours;
 - measured drain pH;
 - predicted drain pH at +12 hours;
-- forecast age and, when configured, weekly production prediction.
+- forecast age;
+- communication-quality indicators;
+- weekly production-indicator prediction, when configured.
 
-## Data path
+The dashboard is intended for research, demonstration, and decision-support
+visualization. It is not a deterministic industrial SCADA system.
+
+## Data flow
 
 ```text
 Historical CSV replay or live LoRa P2P sensing
-                    |
-                    v
+                    │
+                    ▼
              Raspberry Pi
-                    |
-                    v
+                    │
+                    ▼
             ThingSpeak channels
-                    |
-                    v
+                    │
+                    ▼
          Power BI / Power Query
-                    |
-                    v
-       monitoring and forecast pages
+                    │
+                    ▼
+      Monitoring and forecast pages
 ```
 
-## Opening the dashboard
+## Open the dashboard
 
 Use Microsoft Power BI Desktop on Windows and open:
 
-`dashboard/LiveGreenHouseMonitoring.pbix`
+```text
+dashboard/LiveGreenHouseMonitoring.pbix
+```
+
+## ThingSpeak field mapping
+
+The dashboard should follow the field mappings documented in the main
+repository README.
+
+### Channel A — greenhouse measurements
+
+| Field | Variable |
+|---:|---|
+| 1 | `Tair` |
+| 2 | `Rhair` |
+| 3 | `CO2air` |
+| 4 | `Tot_PAR` |
+| 5 | `EC_drain_PC` |
+| 6 | `pH_drain_PC` |
+| 7 | `Cum_irr` |
+
+### Channel B — measurements, predictions, and communication quality
+
+| Field | Variable |
+|---:|---|
+| 1 | Measured EC |
+| 2 | Predicted EC at +12 h |
+| 3 | Measured pH |
+| 4 | Predicted pH at +12 h |
+| 5 | Weekly production indicator |
+| 6 | Forecast age in minutes |
+| 7 | RSSI |
+| 8 | SNR |
 
 ## Refresh configuration
 
 The PBIX file may contain local or project-specific ThingSpeak channel
-identifiers and web-source settings. Before publishing or demonstrating it:
+identifiers and web-source settings. Before publishing, demonstrating, or
+refreshing the dashboard:
 
 1. Open **Transform data** in Power BI Desktop.
-2. Inspect the Power Query sources.
-3. Replace channel IDs and read API keys with public or local values.
+2. Inspect every Power Query source.
+3. Replace project-specific channel IDs and read API keys with valid values.
 4. Confirm that the ThingSpeak field mapping matches the repository README.
-5. Select **Refresh** and verify that all visuals load correctly.
-6. Remove any private keys, credentials, local paths, or cached sensitive data.
+5. update private credentials, write keys, local paths.
+6. Select **Refresh** and verify that all queries and visuals load successfully.
+7. Check time-zone handling and timestamp formatting.
+8. Confirm that prediction timestamps and forecast-age calculations remain
+   consistent with the Raspberry Pi and replay scripts.
 
-## Public repository warning
+ThingSpeak write API keys must be changed in the PBIX file.
 
-ThingSpeak **write API keys must never be embedded** in the PBIX file or
-committed configuration files. A read key should also be removed when the
-channel is intended to remain private.
 
-GitHub can store PBIX files, but the format is binary and cannot be reviewed
-through normal source diffs. For stronger reproducibility, also export:
+## Limitations
 
-- screenshots of each report page;
-- a PDF version of the dashboard;
-- the Power Query M scripts;
-- a field-mapping document;
-- a PBIP project version when supported by the installed Power BI Desktop.
-
-These additional exports make the dashboard logic easier to inspect and archive.
-<<<<<<< HEAD
-
-## Repository audit
-
-An automated text-string scan of the PBIX package did not identify plaintext ThingSpeak API keys or Windows user paths. Because PBIX is a binary package, authors should still verify Power Query sources manually before each public release. A PDF dashboard export is included under `outputs/figures/LiveGreenHouseMonitoring.pdf`.
-=======
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
+- The dashboard reflects the quality and update frequency of the connected
+  ThingSpeak feeds.
+- Temporary communication interruptions may produce missing or delayed values.
+- Forecast visualizations depend on the model and feature-generation pipeline
+  described elsewhere in the repository.
+- Live production output should be treated as an experimental indicator when
+  the complete training feature set is unavailable.
+- The dashboard should not be used as the sole basis for autonomous nutrient or
+  chemical dosing.
