@@ -1,52 +1,39 @@
 # Towards Smart and Sustainable Agriculture in Jordan — Part II
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21645524)] (https://doi.org/10.5281/zenodo.21645524)
-Reproducible training, evaluation, edge inference, cloud streaming, and Power BI
-visualization for greenhouse EC, pH, and production forecasting.
 
-## Included work
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21645524.svg)](https://doi.org/10.5281/zenodo.21645524)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi-C51A4A.svg)](https://www.raspberrypi.com/)
+[![Communication](https://img.shields.io/badge/Communication-LoRa%20P2P-2E8B57.svg)](#live-raspberry-pi-and-lora-p2p-deployment)
 
-- final Paper 2 training and evaluation notebook;
-- fitted EC and pH 12-hour delta-prediction pipelines;
-- fitted Extra-Trees production pipeline;
-- held-out predictions, coefficients, evaluation tables, and manuscript figures;
-- historical CSV replay to two ThingSpeak channels;
-- live RAK3172 LoRa P2P reception and inference on Raspberry Pi;
-- local CSV logging and two-channel ThingSpeak upload;
-- Power BI dashboard and PDF dashboard export;
-- model card, data-availability statement, pinned environments, and citation metadata.
-=======
-# Paper 2 — Smart Greenhouse Forecasting and LoRa Edge Deployment
+## Overview
 
-This repository accompanies Paper 2 and organizes the reproducible workflow for:
+This repository provides the reproducible training, evaluation, model artifacts,
+edge-deployment software, cloud-streaming workflow, and visualization resources
+developed for **Paper 2** of the *Towards Smart and Sustainable Agriculture in
+Jordan* project.
 
-- greenhouse data preparation;
-- EC and pH 12-hour forecasting;
-- weekly production prediction;
-- explainability and evaluation;
-- CSV replay to two ThingSpeak channels;
-- live LoRa P2P reception and inference on Raspberry Pi;
-- local logging and cloud visualization.
+The workflow supports:
+
+- greenhouse data preparation and quality control;
+- 12-hour drain electrical conductivity forecasting;
+- 12-hour drain pH forecasting;
+- weekly production-indicator prediction;
+- chronological model evaluation and explainability;
+- historical CSV replay to ThingSpeak;
+- live LoRa point-to-point reception and inference on Raspberry Pi;
+- local CSV logging and cloud streaming;
+- Power BI monitoring and forecast visualization.
+
+> **Research-use notice:** The forecasts are intended for research and
+> decision support. They must not be interpreted as autonomous nutrient-dosing
+> commands without facility-specific calibration, safety limits, and independent
+> validation.
 
 ## Repository structure
 
 ```text
-
-├── configs/                 # public configuration templates only
-├── dashboard/               # PBIX dashboard and documentation
-├── data/
-│   ├── sample/              # synthetic schema example
-│   └── README.md
-├── models/                  # fitted pipelines and metadata
-├── outputs/                 # figures, tables, and held-out predictions
-├── src/
-│   ├── raspberry_pi/        # live LoRa P2P inference and ThingSpeak upload
-│   └── replay/              # historical CSV replay to ThingSpeak
-├── training/                # reproducible analysis notebook
-├── DATA_AVAILABILITY.md
-├── MODEL_CARD.md
-├── CITATION.cff
-├── LICENSE
-=======
+.
 ├── configs/
 │   ├── harvest_state.example.json
 │   └── live_lora_model_config.example.json
@@ -55,112 +42,205 @@ This repository accompanies Paper 2 and organizes the reproducible workflow for:
 │   └── README.md
 ├── data/
 │   ├── sample/
-│   │   └── live_packet_example.csv
-│   └── README/
-├── docs/
-│   └── Paper_2_draft.docx
-├── models/
 │   └── README.md
+├── models/
+│   ├── ec_12h_model.joblib
+│   ├── ph_12h_model.joblib
+│   ├── production_model.joblib
+│   ├── metadata.json
+│   └── README.md
+├── outputs/
+│   ├── coefficients/
+│   ├── figures/
+│   ├── predictions/
+│   └── tables/
 ├── src/
 │   ├── raspberry_pi/
-│   │   └── live_lora_p2p_models_to_thingspeak.py
+│   │   ├── live_lora_p2p_models_to_thingspeak.py
+│   │   └── README.md
 │   └── replay/
 │       └── stream_one_team_two_thingspeak_channels.py
 ├── training/
 │   ├── Paper_2_Enhanced_AGC2_Reproducible_Analysis_CORRECTED_v3.ipynb
 │   └── README.md
+├── CITATION.cff
 ├── DATA_AVAILABILITY.md
+├── LICENSE
 ├── MODEL_CARD.md
 ├── requirements.txt
 └── requirements-raspberry-pi.txt
 ```
 
+## System workflow
+
+```text
+Historical greenhouse data
+          │
+          ▼
+Preprocessing and hourly aggregation
+          │
+          ├──► EC 12-hour change model
+          ├──► pH 12-hour change model
+          └──► Weekly production model
+          │
+          ▼
+Evaluation, explainability, and saved model pipelines
+          │
+          ├──► Historical CSV replay
+          │         └──► ThingSpeak ──► Power BI
+          │
+          └──► Live LoRa P2P reception on Raspberry Pi
+                    ├──► Local CSV logging
+                    ├──► Live model inference
+                    └──► ThingSpeak ──► Power BI
+```
+
 ## 1. Training and paper reproduction
 
-The notebook is located at:
+The main reproducible notebook is located at:
 
 ```text
 training/Paper_2_Enhanced_AGC2_Reproducible_Analysis_CORRECTED_v3.ipynb
 ```
 
-Create a local environment:
+### Create the Python environment
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux/macOS: source .venv/bin/activate
+```
+
+Activate the environment:
+
+```bash
+# Windows
+.venv\Scripts\activate
+
+# Linux/macOS
+source .venv/bin/activate
+```
+
+Install the required packages:
+
+```bash
 pip install -r requirements.txt
 ```
 
-Obtain the Autonomous Greenhouse Challenge, Second Edition dataset from its
-authorized source using DOI
-`10.4121/uuid:88d22c60-21b3-4ea8-90db-20249a5be2a7`, place it under
-`data/raw/`, and run all notebook cells in order. Raw data are intentionally not
-redistributed.
+### Obtain the dataset
+
+The full **Autonomous Greenhouse Challenge, Second Edition** dataset is not
+redistributed through this repository.
+
+Obtain it from its authorized source using:
+
+```text
+DOI: 10.4121/uuid:88d22c60-21b3-4ea8-90db-20249a5be2a7
+```
+
+Place the authorized dataset under:
+
+```text
+data/raw/
+```
+
+Then run the notebook cells in order.
+
+See [DATA_AVAILABILITY.md](DATA_AVAILABILITY.md) for the expected data
+organization and repository data-availability statement.
 
 ## 2. Included models
 
-The checked-in model files are complete scikit-learn Pipelines serialized with
-scikit-learn 1.4.2:
+The repository includes complete scikit-learn pipelines serialized using
+**scikit-learn 1.4.2**:
 
-- `models/ec_12h_model.joblib`;
-- `models/ph_12h_model.joblib`;
-- `models/production_model.joblib`;
-- `models/metadata.json`.
+- `models/ec_12h_model.joblib`
+- `models/ph_12h_model.joblib`
+- `models/production_model.joblib`
+- `models/metadata.json`
 
-The EC and pH models predict changes over 12 hours. Future values are obtained
-by adding the predicted change to the current measurement.
+The EC and pH models predict **12-hour changes**, rather than direct future
+measurements. Future values are reconstructed as:
 
-Validate the artifacts without opening a serial port:
+```text
+EC(t + 12 h) = EC(t) + predicted EC change
+pH(t + 12 h) = pH(t) + predicted pH change
+```
+
+The production model generates a weekly production indicator based on the
+feature space and harvest records used during model training.
+
+See [MODEL_CARD.md](MODEL_CARD.md) for model scope, intended use, assumptions,
+and limitations.
+
+### Validate the model artifacts
+
+Create a private local configuration:
 
 ```bash
-cp configs/live_lora_model_config.example.json configs/live_lora_model_config.local.json
+cp configs/live_lora_model_config.example.json \
+   configs/live_lora_model_config.local.json
+```
+
+Validate the models without opening the Raspberry Pi serial port:
+
+```bash
 python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
   --config configs/live_lora_model_config.local.json \
   --validate-models
 ```
 
+Real API keys and private configuration values must only be stored in ignored
+`*.local.json` files.
+
 ## 3. Historical ThingSpeak replay
 
-`src/replay/stream_one_team_two_thingspeak_channels.py` replays authorized
-historical team data and precomputed forecasts to two ThingSpeak channels. It is
-useful for reproducing the cloud/dashboard pipeline without physical hardware.
+The historical replay script is located at:
 
-## 4. Raspberry Pi and LoRa P2P deployment
+```text
+src/replay/stream_one_team_two_thingspeak_channels.py
+```
 
-The live script configures the RAK3172 receiver with:
-=======
-## Two operating modes
+It replays authorized greenhouse measurements and precomputed forecasts to two
+ThingSpeak channels.
 
-### 1. Reproducible CSV replay
-
-`src/replay/stream_one_team_two_thingspeak_channels.py` replays one greenhouse
-team from historical files and uploads raw measurements and precomputed
-forecasts to two ThingSpeak channels.
-
-This mode is useful for:
+This mode supports:
 
 - dashboard development;
 - cloud-pipeline verification;
-- reproducing the paper's visualization flow;
+- reproduction of the paper's visualization workflow;
 - testing without physical LoRa hardware.
 
-### 2. Live Raspberry Pi + LoRa P2P inference
+Example:
 
-`src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py` runs on Raspberry Pi
-and:
+```bash
+python src/replay/stream_one_team_two_thingspeak_channels.py \
+  --data-dir data/raw \
+  --predictions-csv outputs/predictions/aicu_ec_ph_predictions.csv \
+  --config configs/thingspeak_two_channels.local.json \
+  --start-at-first-prediction \
+  --interval 20
+```
+
+## 4. Live Raspberry Pi and LoRa P2P deployment
+
+The live deployment script is:
+
+```text
+src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py
+```
+
+It:
 
 1. configures a RAK3172 receiver in LoRa P2P mode;
 2. receives measurements through `/dev/serial0`;
-3. decodes and validates packets;
+3. decodes and validates incoming packets;
 4. logs accepted measurements locally;
 5. aggregates measurements into hourly medians;
-6. builds the lag and rolling features used by Paper 2;
+6. constructs the lagged and rolling features used during training;
 7. predicts EC and pH 12 hours ahead;
-8. predicts the weekly production indicator;
-9. uploads raw and predicted values to ThingSpeak.
+8. computes an experimental weekly production indicator;
+9. uploads measurements and model outputs to ThingSpeak.
 
-The radio settings are:
+### Radio configuration
 
 ```text
 AT+NWM=0
@@ -168,11 +248,59 @@ AT+P2P=868000000:7:0:0:10:14
 AT+PRECV=65535
 ```
 
-Install the Raspberry Pi environment:
-=======
+### Raspberry Pi installation
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip
+
+python3 -m venv ~/paper2-live-env
+source ~/paper2-live-env/bin/activate
+
+pip install -r requirements-raspberry-pi.txt
+sudo usermod -aG dialout "$USER"
+```
+
+Log out and sign in again after adding the user to the `dialout` group.
+
+Create the private local configuration:
+
+```bash
+cp configs/live_lora_model_config.example.json \
+   configs/live_lora_model_config.local.json
+```
+
+Edit the local file to provide:
+
+- ThingSpeak write API keys;
+- model and metadata paths;
+- serial-port settings;
+- legacy packet-conversion settings, when required.
+
+Test without cloud upload:
+
+```bash
+python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
+  --config configs/live_lora_model_config.local.json \
+  --dry-run
+```
+
+Run with ThingSpeak upload enabled:
+
+```bash
+python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
+  --config configs/live_lora_model_config.local.json
+```
+
+Additional deployment instructions are provided in:
+
+```text
+src/raspberry_pi/README.md
+```
+
 ## Recommended LoRa payload
 
-Transmit the seven model variables in this order:
+The preferred live payload contains the seven model variables in this order:
 
 ```text
 Tair,Rhair,CO2air,Tot_PAR,EC_drain_PC,pH_drain_PC,Cum_irr
@@ -184,223 +312,119 @@ Example:
 25.4,68.2,430,115.6,2.18,5.82,14.3
 ```
 
-JSON with the same field names is also accepted.
+A JSON payload using the same field names is also accepted.
 
-The earlier eight-value packet is supported for compatibility, but it requires
-approximations for missing model variables. Such outputs must be treated as
-experimental until validated.
+The earlier eight-value payload is supported for compatibility, but it requires
+approximations for variables that are not directly transmitted. These
+approximations are recorded in the log and must be treated as experimental
+until independently validated.
 
+## 5. ThingSpeak channel mapping
 
-## Power BI dashboard
-
-The repository includes:
-
-```text
-dashboard/LiveGreenHouseMonitoring.pbix
-```
-
-The dashboard is part of the implemented end-to-end workflow and connects the
-ThingSpeak data channels to near-real-time monitoring and forecast
-visualizations. It should be opened with Microsoft Power BI Desktop.
-
-Before publishing or refreshing the dashboard, inspect its Power Query data
-sources and replace project-specific ThingSpeak channel IDs or read keys.
-Do not embed ThingSpeak write keys in the PBIX file.
-
-Detailed dashboard instructions are available in
-`dashboard/README.md`.
-
-## Raspberry Pi installation
-
-On Raspberry Pi OS:
-
-```bash
-sudo apt update
-sudo apt install -y python3-venv python3-pip
-python3 -m venv ~/paper2-live-env
-source ~/paper2-live-env/bin/activate
-pip install -r requirements-raspberry-pi.txt
-sudo usermod -aG dialout "$USER"
-```
-
-Copy both local templates, add ThingSpeak write keys to the local configuration,
-and follow `src/raspberry_pi/README.md`.
-
-### Recommended live payload
-
-```text
-Tair,Rhair,CO2air,Tot_PAR,EC_drain_PC,pH_drain_PC,Cum_irr
-```
-
-The script calculates `HumDef`, uses an explicit configurable fallback for
-`Tot_PAR_Lamps`, generates the exact lag/rolling feature names required by the
-included nutrient models, predicts EC and pH at +12 hours, computes an
-experimental production indicator, logs locally, and uploads results.
-
-## 5. ThingSpeak mappings
-
-### Channel A — measurements
-=======
-```
-
-Give the current user serial-port permission:
-
-```bash
-sudo usermod -aG dialout "$USER"
-```
-
-Log out and sign in again after changing group membership.
-
-Copy the example configuration:
-
-```bash
-cp configs/live_lora_model_config.example.json \
-   configs/live_lora_model_config.local.json
-```
-
-Edit the local file and provide:
-
-- ThingSpeak write API keys;
-- exact model paths;
-- exact scaler/imputer paths;
-- exact feature-name manifest paths;
-- serial and packet-conversion settings.
-
-Test without cloud upload:
-
-```bash
-python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
-  --config configs/live_lora_model_config.local.json \
-  --dry-run
-```
-
-Run normally:
-
-```bash
-python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
-  --config configs/live_lora_model_config.local.json
-```
-
-## ThingSpeak channel mapping
-
-### Channel A — live/raw greenhouse data
+### Channel A — greenhouse measurements
 
 | Field | Variable |
-|---|---|
-| 1 | Tair |
-| 2 | Rhair |
-| 3 | CO2air |
-| 4 | Tot_PAR |
-| 5 | EC_drain_PC |
-| 6 | pH_drain_PC |
-| 7 | Cum_irr |
+|---:|---|
+| 1 | `Tair` |
+| 2 | `Rhair` |
+| 3 | `CO2air` |
+| 4 | `Tot_PAR` |
+| 5 | `EC_drain_PC` |
+| 6 | `pH_drain_PC` |
+| 7 | `Cum_irr` |
 
-### Channel B — predictions and link quality
-=======
-### Channel B — measured and predicted values
+### Channel B — measurements, predictions, and communication quality
 
 | Field | Variable |
-|---|---|
-| 1 | measured EC |
-| 2 | predicted EC at +12 h |
-| 3 | measured pH |
-| 4 | predicted pH at +12 h |
-| 5 | weekly production indicator |
-=======
-| 5 | weekly production-indicator prediction |
-| 6 | forecast age in minutes |
+|---:|---|
+| 1 | Measured EC |
+| 2 | Predicted EC at +12 h |
+| 3 | Measured pH |
+| 4 | Predicted pH at +12 h |
+| 5 | Weekly production indicator |
+| 6 | Forecast age in minutes |
 | 7 | RSSI |
 | 8 | SNR |
 
-<<<<<<< HEAD
-Real API keys belong only in `*.local.json` files, which are excluded by
-`.gitignore`.
+ThingSpeak write API keys must never be committed to the public repository.
 
 ## 6. Power BI dashboard
 
-Open `dashboard/LiveGreenHouseMonitoring.pbix` in Microsoft Power BI Desktop.
-The dashboard reads ThingSpeak feeds for near-real-time measurement and forecast
-visualization. Review Power Query sources and credentials before refreshing or
-publishing. See `dashboard/README.md`.
+The implemented Power BI dashboard is stored under:
 
-## 7. Data and outputs
+```text
+dashboard/
+```
 
-The repository contains a synthetic input example and derived manuscript
-artifacts only. It does not include the full source dataset. See
-`DATA_AVAILABILITY.md`.
+Open the `.pbix` file using Microsoft Power BI Desktop.
+
+Before refreshing or publishing the dashboard:
+
+1. open **Transform data**;
+2. inspect all Power Query data sources;
+3. replace project-specific ThingSpeak channel IDs or read keys;
+4. remove private credentials and local computer paths;
+5. confirm that the field mappings match this README;
+6. refresh all report visuals.
+
+The dashboard provides near-real-time monitoring and forecast visualization. It
+is not a deterministic industrial SCADA system.
+
+## 7. Reproducibility outputs
+
+Selected research outputs are stored under:
+
+```text
+outputs/
+```
+
+These may include:
+
+- held-out EC and pH predictions;
+- weekly production predictions;
+- evaluation tables;
+- standardized Ridge coefficients;
+- Extra-Trees feature importance;
+- quality-control summaries;
+- leave-one-team-out results;
+- manuscript figures.
+
+The full source dataset remains governed by the original data provider's terms.
 
 ## Limitations
 
-- Live use outside the original greenhouse domain requires independent validation.
-- Legacy payload conversions are approximations and are logged as such.
-- The production model requires many variables absent from the compact live
-  payload; imputed live output is an experimental indicator, not a validated
-  crop-yield estimate.
-- Predictions are decision-support outputs and are not autonomous dosing commands.
-
-## License and citation
-
-Software is released under the MIT License. Dataset terms remain governed by
-the original data provider. Citation metadata are provided in `CITATION.cff`.
-=======
-## Training and model export
-
-Copy the Paper 2 training notebook into `training/`. It should export the exact
-trained estimators, preprocessing objects, and feature manifests described in
-`training/README.md`.
-
-The repository package does not include the notebook because the notebook file
-was not supplied during assembly. It also does not include the full dataset or
-trained model binaries.
-
-## Data availability
-
-See [DATA_AVAILABILITY.md](DATA_AVAILABILITY.md).
-
-The repository includes only a synthetic schema example. The full research
-dataset should be obtained from its authorized source and must not be committed
-unless redistribution is explicitly permitted.
-
-## Reproducibility checklist
-
-Before creating a release:
-
-- [ ] Add the final training notebook or converted scripts.
-- [ ] Export and test the EC, pH, and production model artifacts.
-- [ ] Add exact environment/version information.
-- [ ] Add the official dataset citation and access link.
-- [ ] Confirm chronological split and feature-engineering code.
-- [ ] Remove all API keys, passwords, tokens, and private URLs.
-- [ ] Test CSV replay.
-- [ ] Test Raspberry Pi LoRa reception in `--dry-run` mode.
-- [ ] Test ThingSpeak uploads.
-- [ ] Open and refresh `dashboard/LiveGreenHouseMonitoring.pbix`.
-- [ ] Remove private ThingSpeak keys and local paths from the PBIX file.
-- [ ] Add a software license compatible with data and institutional terms.
-- [ ] Create a tagged release matching the manuscript version.
-
-## GitHub upload
-
-From the repository directory:
-
-```bash
-git init
-git add .
-git commit -m "Initial Paper 2 reproducibility release"
-git branch -M main
-git remote add origin YOUR_GITHUB_REPOSITORY_URL
-git push -u origin main
-```
-
-For files larger than GitHub's normal limit, use Git LFS or publish them as a
-separate release/archive rather than committing them directly.
+- The models were trained in the greenhouse domain described in Paper 2.
+- Deployment in another crop, facility, season, or sensing configuration
+  requires independent validation.
+- Legacy conversions from TDS to EC, lux to PAR, or pump status to cumulative
+  irrigation are approximations.
+- The production model may require variables that are unavailable in the
+  compact live payload. Live production results must therefore be treated as
+  experimental indicators.
+- Model coefficients describe predictive associations rather than independent
+  causal agronomic effects.
+- Forecasts must not be used as direct chemical-dosing commands without
+  calibrated safety limits and facility-specific testing.
 
 ## Citation
 
-Add the final paper citation here after acceptance or publication.
+The archived release is available through Zenodo:
 
-## Research-use notice
+**DOI:** [10.5281/zenodo.21645524](https://doi.org/10.5281/zenodo.21645524)
 
-The forecasts are intended for research and decision support. They should not
-be used as autonomous nutrient-dosing commands without facility-specific
-calibration, safety limits, and independent validation.
+Citation metadata are also provided in
+[`CITATION.cff`](CITATION.cff). GitHub can use this file to generate formatted
+citations.
+
+## License
+
+The repository software is released under the
+[MIT License](LICENSE).
+
+The original greenhouse dataset is not covered by the software license and
+remains subject to the terms established by its provider.
+
+## Acknowledgment
+
+The authors acknowledge Al Hussein Technical University and the contributors
+to the Autonomous Greenhouse Challenge dataset and experimental infrastructure.
