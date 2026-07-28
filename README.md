@@ -26,13 +26,11 @@ This repository accompanies Paper 2 and organizes the reproducible workflow for:
 - CSV replay to two ThingSpeak channels;
 - live LoRa P2P reception and inference on Raspberry Pi;
 - local logging and cloud visualization.
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
 
 ## Repository structure
 
 ```text
-.
-<<<<<<< HEAD
+
 ├── configs/                 # public configuration templates only
 ├── dashboard/               # PBIX dashboard and documentation
 ├── data/
@@ -73,12 +71,10 @@ This repository accompanies Paper 2 and organizes the reproducible workflow for:
 │   └── README.md
 ├── DATA_AVAILABILITY.md
 ├── MODEL_CARD.md
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
 ├── requirements.txt
 └── requirements-raspberry-pi.txt
 ```
 
-<<<<<<< HEAD
 ## 1. Training and paper reproduction
 
 The notebook is located at:
@@ -165,7 +161,6 @@ and:
 9. uploads raw and predicted values to ThingSpeak.
 
 The radio settings are:
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
 
 ```text
 AT+NWM=0
@@ -173,7 +168,6 @@ AT+P2P=868000000:7:0:0:10:14
 AT+PRECV=65535
 ```
 
-<<<<<<< HEAD
 Install the Raspberry Pi environment:
 =======
 ## Recommended LoRa payload
@@ -219,7 +213,6 @@ Detailed dashboard instructions are available in
 ## Raspberry Pi installation
 
 On Raspberry Pi OS:
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
 
 ```bash
 sudo apt update
@@ -227,7 +220,6 @@ sudo apt install -y python3-venv python3-pip
 python3 -m venv ~/paper2-live-env
 source ~/paper2-live-env/bin/activate
 pip install -r requirements-raspberry-pi.txt
-<<<<<<< HEAD
 sudo usermod -aG dialout "$USER"
 ```
 
@@ -292,7 +284,6 @@ python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
 ## ThingSpeak channel mapping
 
 ### Channel A — live/raw greenhouse data
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
 
 | Field | Variable |
 |---|---|
@@ -304,7 +295,6 @@ python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
 | 6 | pH_drain_PC |
 | 7 | Cum_irr |
 
-<<<<<<< HEAD
 ### Channel B — predictions and link quality
 =======
 ### Channel B — measured and predicted values
@@ -320,7 +310,6 @@ python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
 | 5 | weekly production indicator |
 =======
 | 5 | weekly production-indicator prediction |
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
 | 6 | forecast age in minutes |
 | 7 | RSSI |
 | 8 | SNR |
@@ -417,4 +406,3 @@ Add the final paper citation here after acceptance or publication.
 The forecasts are intended for research and decision support. They should not
 be used as autonomous nutrient-dosing commands without facility-specific
 calibration, safety limits, and independent validation.
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
