@@ -1,5 +1,5 @@
 # Towards Smart and Sustainable Agriculture in Jordan — Part II
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21645524)](https://doi.org/10.5281/zenodo.21645524)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21645524)] (https://doi.org/10.5281/zenodo.21645524)
 Reproducible training, evaluation, edge inference, cloud streaming, and Power BI
 visualization for greenhouse EC, pH, and production forecasting.
 
