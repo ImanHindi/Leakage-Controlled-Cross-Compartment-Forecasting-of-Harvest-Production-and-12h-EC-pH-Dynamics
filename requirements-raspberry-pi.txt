@@ -1,2 +1,5 @@
 -r requirements.txt
+<<<<<<< HEAD
 pyserial==3.5
+=======
+>>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb

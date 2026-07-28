@@ -70,7 +70,10 @@ through normal source diffs. For stronger reproducibility, also export:
 - a PBIP project version when supported by the installed Power BI Desktop.
 
 These additional exports make the dashboard logic easier to inspect and archive.
+<<<<<<< HEAD
 
 ## Repository audit
 
 An automated text-string scan of the PBIX package did not identify plaintext ThingSpeak API keys or Windows user paths. Because PBIX is a binary package, authors should still verify Power Query sources manually before each public release. A PDF dashboard export is included under `outputs/figures/LiveGreenHouseMonitoring.pdf`.
+=======
+>>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb

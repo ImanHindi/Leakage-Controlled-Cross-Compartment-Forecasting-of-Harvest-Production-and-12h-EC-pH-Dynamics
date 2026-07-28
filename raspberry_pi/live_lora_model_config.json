@@ -1,0 +1,54 @@
+{
+  "radio": {
+    "serial_port": "/dev/serial0",
+    "baud_rate": 115200,
+    "frequency_hz": 868000000,
+    "spreading_factor": 7,
+    "bandwidth_code": 0,
+    "coding_rate_code": 0,
+    "preamble_symbols": 10,
+    "tx_power_dbm": 14
+  },
+  "live_input": {
+    "co2_fallback_ppm": 420.0,
+    "tds_ec_factor": 500.0,
+    "lux_to_par_factor": 0.0185,
+    "irrigation_flow_lph": 0.0,
+    "initial_cumulative_irrigation_l": 0.0
+  },
+  "models": {
+    "ec": {
+      "model": "models/ec_ridge_model.joblib",
+      "scaler": "models/ec_scaler.joblib",
+      "imputer": null,
+      "features": "models/ec_feature_names.json",
+      "prediction_kind": "delta"
+    },
+    "ph": {
+      "model": "models/ph_ridge_model.joblib",
+      "scaler": "models/ph_scaler.joblib",
+      "imputer": null,
+      "features": "models/ph_feature_names.json",
+      "prediction_kind": "delta"
+    },
+    "production": {
+      "enabled": true,
+      "model": "models/production_extra_trees.joblib",
+      "scaler": null,
+      "imputer": "models/production_imputer.joblib",
+      "features": "models/production_feature_names.json",
+      "prediction_kind": "direct"
+    }
+  },
+  "thingspeak": {
+    "data_channel_write_api_key": "REPLACE_WITH_CHANNEL_A_WRITE_KEY",
+    "prediction_channel_write_api_key": "REPLACE_WITH_CHANNEL_B_WRITE_KEY",
+    "minimum_interval_seconds": 20,
+    "timeout_seconds": 30
+  },
+  "output": {
+    "csv_log": "live_lora_predictions.csv",
+    "harvest_state_json": "harvest_state.json"
+  },
+  "history_hours": 504
+}

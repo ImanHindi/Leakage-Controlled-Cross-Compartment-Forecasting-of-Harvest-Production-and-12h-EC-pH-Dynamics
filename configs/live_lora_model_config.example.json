@@ -11,7 +11,10 @@
   },
   "live_input": {
     "co2_fallback_ppm": 420.0,
+<<<<<<< HEAD
     "tot_par_lamps_fallback": 0.0,
+=======
+>>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
     "tds_ec_factor": 500.0,
     "lux_to_par_factor": 0.0185,
     "irrigation_flow_lph": 0.0,
@@ -19,6 +22,7 @@
   },
   "models": {
     "ec": {
+<<<<<<< HEAD
       "model": "../models/ec_12h_model.joblib",
       "scaler": null,
       "imputer": null,
@@ -42,6 +46,28 @@
       "features": null,
       "prediction_kind": "direct",
       "allow_missing": true
+=======
+      "model": "models/ec_ridge_model.joblib",
+      "scaler": "models/ec_scaler.joblib",
+      "imputer": null,
+      "features": "models/ec_feature_names.json",
+      "prediction_kind": "delta"
+    },
+    "ph": {
+      "model": "models/ph_ridge_model.joblib",
+      "scaler": "models/ph_scaler.joblib",
+      "imputer": null,
+      "features": "models/ph_feature_names.json",
+      "prediction_kind": "delta"
+    },
+    "production": {
+      "enabled": true,
+      "model": "models/production_extra_trees.joblib",
+      "scaler": null,
+      "imputer": "models/production_imputer.joblib",
+      "features": "models/production_feature_names.json",
+      "prediction_kind": "direct"
+>>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
     }
   },
   "thingspeak": {
@@ -51,8 +77,16 @@
     "timeout_seconds": 30
   },
   "output": {
+<<<<<<< HEAD
     "csv_log": "../outputs/live_lora_predictions.csv",
     "harvest_state_json": "harvest_state.local.json"
   },
   "history_hours": 504
 }
+=======
+    "csv_log": "live_lora_predictions.csv",
+    "harvest_state_json": "harvest_state.json"
+  },
+  "history_hours": 504
+}
+>>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
