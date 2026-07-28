@@ -1,6 +1,5 @@
 # Model artifacts
 
-<<<<<<< HEAD
 This directory contains the fitted scikit-learn Pipelines exported by the Paper
 2 notebook:
 
@@ -19,10 +18,6 @@ The live application reconstructs future nutrient values as:
 - `EC(t+12 h) = EC(t) + predicted EC change`;
 - `pH(t+12 h) = pH(t) + predicted pH change`.
 
-Production inference from the compact live payload contains many unavailable
-training variables. The bundled pipeline imputes those values, but such output
-is an extrapolative decision-support indicator and is not a validated yield
-estimate for a different crop or facility.
 =======
 Place the exact fitted artifacts exported by the Paper 2 training workflow in
 this directory.
@@ -45,6 +40,4 @@ reconstructs the future values as:
 - `EC(t+12 h) = EC(t) + predicted EC change`
 - `pH(t+12 h) = pH(t) + predicted pH change`
 
-Do not commit sensitive or very large model files unless repository and license
-policies allow it. Git LFS may be used when necessary.
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
+
