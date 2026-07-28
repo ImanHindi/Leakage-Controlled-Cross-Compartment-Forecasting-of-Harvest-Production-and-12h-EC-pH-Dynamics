@@ -34,6 +34,7 @@ This repository accompanies Paper 2 and organizes the reproducible workflow for:
 │   └── replay/
 │       └── stream_one_team_two_thingspeak_channels.py
 ├── training/
+│   ├── Paper_2_Enhanced_AGC2_Reproducible_Analysis_CORRECTED_v3.ipynb
 │   └── README.md
 ├── DATA_AVAILABILITY.md
 ├── MODEL_CARD.md
