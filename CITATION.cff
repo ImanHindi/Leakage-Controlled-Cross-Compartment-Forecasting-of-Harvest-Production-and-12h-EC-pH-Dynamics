@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software or its derived artifacts, please cite the associated Paper 2 manuscript."
+title: "Smart Greenhouse Forecasting and LoRa Edge Deployment"
+type: software
+authors:
+  - family-names: Hindi
+    given-names: Iman
+version: 1.0.0
+date-released: 2026-07-28
+license: MIT

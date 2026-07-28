@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+paper2-training-env/
+raspberry_pi_environment/
+.env
+*.env
+configs/*.local.json
+data/raw/
+logs/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/

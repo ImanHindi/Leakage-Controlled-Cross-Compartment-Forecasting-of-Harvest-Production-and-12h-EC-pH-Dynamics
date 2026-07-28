@@ -1,0 +1,34 @@
+item,value
+production_model,Extra Trees
+production_train_events,110
+production_test_events,23
+production_predictors,205
+production_RMSE,0.15835626439730577
+production_MAE,0.12610684782608692
+production_R2,0.40653619570358457
+production_best_baseline,Previous-3 mean
+production_RMSE_reduction_pct,16.044000494729897
+production_MAE_reduction_pct,13.84779702970302
+hourly_predictors,202
+hourly_train_samples,19214
+hourly_test_samples,3538
+EC_model_family,Ridge
+EC_alpha,30.0
+pH_model_family,Ridge
+pH_alpha,0.01
+EC_Model_RMSE,0.28945258797191464
+EC_Persistence_RMSE,0.42251394416111726
+EC_Model_MAE,0.1875884942929018
+EC_Persistence_MAE,0.316523460102883
+EC_Model_R2,0.8368678906262536
+EC_Persistence_R2,0.6524104822392798
+EC_RMSE_reduction_pct,31.492772730469298
+EC_MAE_reduction_pct,40.73472650907838
+pH_Model_RMSE,0.18899991332355995
+pH_Persistence_RMSE,0.2866970428621924
+pH_Model_MAE,0.08959259838217484
+pH_Persistence_MAE,0.1602543807340305
+pH_Model_R2,0.9813925170539577
+pH_Persistence_R2,0.9571835312390997
+pH_RMSE_reduction_pct,34.076783130823166
+pH_MAE_reduction_pct,44.09351059746126

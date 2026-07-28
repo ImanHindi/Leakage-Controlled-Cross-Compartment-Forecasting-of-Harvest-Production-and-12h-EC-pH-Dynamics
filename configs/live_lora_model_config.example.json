@@ -1,0 +1,58 @@
+{
+  "radio": {
+    "serial_port": "/dev/serial0",
+    "baud_rate": 115200,
+    "frequency_hz": 868000000,
+    "spreading_factor": 7,
+    "bandwidth_code": 0,
+    "coding_rate_code": 0,
+    "preamble_symbols": 10,
+    "tx_power_dbm": 14
+  },
+  "live_input": {
+    "co2_fallback_ppm": 420.0,
+    "tot_par_lamps_fallback": 0.0,
+    "tds_ec_factor": 500.0,
+    "lux_to_par_factor": 0.0185,
+    "irrigation_flow_lph": 0.0,
+    "initial_cumulative_irrigation_l": 0.0
+  },
+  "models": {
+    "ec": {
+      "model": "../models/ec_12h_model.joblib",
+      "scaler": null,
+      "imputer": null,
+      "features": null,
+      "prediction_kind": "delta",
+      "allow_missing": false
+    },
+    "ph": {
+      "model": "../models/ph_12h_model.joblib",
+      "scaler": null,
+      "imputer": null,
+      "features": null,
+      "prediction_kind": "delta",
+      "allow_missing": false
+    },
+    "production": {
+      "enabled": true,
+      "model": "../models/production_model.joblib",
+      "scaler": null,
+      "imputer": null,
+      "features": null,
+      "prediction_kind": "direct",
+      "allow_missing": true
+    }
+  },
+  "thingspeak": {
+    "data_channel_write_api_key": "REPLACE_WITH_CHANNEL_A_WRITE_KEY",
+    "prediction_channel_write_api_key": "REPLACE_WITH_CHANNEL_B_WRITE_KEY",
+    "minimum_interval_seconds": 20,
+    "timeout_seconds": 30
+  },
+  "output": {
+    "csv_log": "../outputs/live_lora_predictions.csv",
+    "harvest_state_json": "harvest_state.local.json"
+  },
+  "history_hours": 504
+}
