@@ -298,7 +298,6 @@ python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
 ### Channel B — predictions and link quality
 =======
 ### Channel B — measured and predicted values
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
 
 | Field | Variable |
 |---|---|
@@ -306,7 +305,6 @@ python src/raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
 | 2 | predicted EC at +12 h |
 | 3 | measured pH |
 | 4 | predicted pH at +12 h |
-<<<<<<< HEAD
 | 5 | weekly production indicator |
 =======
 | 5 | weekly production-indicator prediction |
