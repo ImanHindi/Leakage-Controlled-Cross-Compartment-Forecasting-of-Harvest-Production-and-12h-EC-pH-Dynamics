@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Towards Smart and Sustainable Agriculture in Jordan — Part II
 
 Reproducible training, evaluation, edge inference, cloud streaming, and Power BI
