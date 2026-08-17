@@ -1,43 +1,27 @@
-# Model artifacts
+# Final frozen model artifacts
 
-This directory contains the fitted scikit-learn Pipelines exported by the Paper
-2 notebook:
+These are the model files selected by the executed leakage-controlled v4 analysis.
 
-- `ec_12h_model.joblib` — Ridge pipeline predicting 12-hour EC change;
-- `ph_12h_model.joblib` — Ridge pipeline predicting 12-hour pH change;
-- `production_model.joblib` — Extra-Trees production pipeline;
-- `metadata.json` — dataset, split, model, feature, and limitation metadata.
+| File | Final family | Pipeline | Feature count |
+|---|---|---|---:|
+| `production_model.joblib` | Extra Trees | SimpleImputer → ExtraTreesRegressor | 205 |
+| `ec_12h_model.joblib` | Histogram Gradient Boosting | SimpleImputer → HistGradientBoostingRegressor | 202 |
+| `ph_12h_model.joblib` | Ridge (α = 0.01) | SimpleImputer → StandardScaler → Ridge | 202 |
+| `metadata.json` | — | model families, feature order, split metadata, DOI | — |
 
-The pipelines include their fitted preprocessing steps, so separate scaler and
-imputer files are not required. They were serialized with scikit-learn 1.4.2;
-use the pinned environment in `requirements.txt` to avoid incompatible model
-loading.
+The EC and pH pipelines predict **12-h changes**, not direct future states. The absolute forecast is reconstructed as:
 
-The live application reconstructs future nutrient values as:
+```text
+EC(t+12 h) = EC(t) + predicted ΔEC(t,12)
+pH(t+12 h) = pH(t) + predicted ΔpH(t,12)
+```
 
-- `EC(t+12 h) = EC(t) + predicted EC change`;
-- `pH(t+12 h) = pH(t) + predicted pH change`.
+## Version compatibility
 
-=======
-Place the exact fitted artifacts exported by the Paper 2 training workflow in
-this directory.
+The serialized artifacts record scikit-learn **1.4.2** as the training version. Reproducing training should use that version where possible. The final target-device benchmark was run in the working Raspberry Pi environment reported in `../raspberry_pi/results/raspberry_pi_environment_v4.json`; its original environment record did not include the installed scikit-learn package version. The updated benchmark script records package versions on future runs.
 
-Expected files in the example configuration:
+If scikit-learn emits a cross-version unpickling warning, do not silently re-save or replace the artifact. Validate predictions against the frozen held-out result files before using a re-serialized copy.
 
-- `ec_ridge_model.joblib`
-- `ec_scaler.joblib`
-- `ec_feature_names.json`
-- `ph_ridge_model.joblib`
-- `ph_scaler.joblib`
-- `ph_feature_names.json`
-- `production_extra_trees.joblib`
-- `production_imputer.joblib`
-- `production_feature_names.json`
+## Integrity
 
-The EC and pH models are expected to predict 12-hour changes. The live script
-reconstructs the future values as:
-
-- `EC(t+12 h) = EC(t) + predicted EC change`
-- `pH(t+12 h) = pH(t) + predicted pH change`
-
-
+Run `python ../tools/validate_release.py` from the repository root before release. SHA-256 hashes for the final artifacts are included in `../RELEASE_MANIFEST_SHA256.txt`.

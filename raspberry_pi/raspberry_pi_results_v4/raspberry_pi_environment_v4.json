@@ -1,0 +1,11 @@
+{
+  "platform": "Linux-6.12.47+rpt-rpi-v8-aarch64-with-glibc2.41",
+  "machine": "aarch64",
+  "processor": "",
+  "device_model": "Raspberry Pi 4 Model B Rev 1.5",
+  "python": "3.13.5",
+  "logical_cpu_count": 4,
+  "physical_cpu_count": 4,
+  "total_system_memory_MB": 950.677504,
+  "process_rss_all_models_loaded_MB": 160.985088
+}

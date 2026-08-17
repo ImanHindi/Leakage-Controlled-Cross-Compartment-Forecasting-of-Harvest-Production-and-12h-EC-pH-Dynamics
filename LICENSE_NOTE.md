@@ -1,13 +1,7 @@
-# License selection required
+# License note
 
-No software or data license has been imposed automatically.
+No software license is automatically assigned by this repository package.
 
-Before publishing the repository, the authors should select a license that is
-compatible with:
+Before adding a public license, confirm the intended reuse terms with all authors and any applicable Al Hussein Technical University or project requirements. Dataset rights are separate from software/code rights; the Autonomous Greenhouse Challenge data are not redistributed here and remain subject to their source terms.
 
-- the original dataset terms;
-- third-party software and model artifacts;
-- institutional and publication requirements.
-
-Common software choices include MIT, BSD-3-Clause, and Apache-2.0. Dataset and
-manuscript licensing should be considered separately.
+Until a license is explicitly added, normal copyright protection applies to repository-authored code and documentation.

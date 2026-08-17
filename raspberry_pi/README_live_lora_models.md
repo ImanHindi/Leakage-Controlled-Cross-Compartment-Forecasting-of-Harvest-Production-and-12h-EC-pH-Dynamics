@@ -1,91 +1,118 @@
-# Live LoRa P2P inference for Paper 2
+# Raspberry Pi live advisory execution — final Paper 2 models
 
+This folder contains two distinct forms of edge evidence:
 
-## Required model files
+1. `benchmark_v4_selected_models.py` — the reproducible target-device timing benchmark.
+2. `live_lora_p2p_models_to_thingspeak.py` — the HTU LoRa–Raspberry Pi–ThingSpeak–Power BI advisory integration adapter.
 
-Copy the exact serialized artifacts exported by the Paper-2 training pipeline
-into a `models` folder, then edit `live_lora_model_config.json`.
+The second script **does not perform model training and does not issue model-driven actuator commands**.
 
-For each model, the code needs:
+## Final frozen models loaded
 
-1. the trained estimator or sklearn Pipeline;
-2. the exact ordered feature-name list;
-3. the fitted scaler, when it is not already inside a Pipeline;
-4. the fitted imputer, when it is not already inside a Pipeline.
+The configuration points directly to the complete pipelines under `../models/`:
 
-The EC and pH artifacts must predict **12-hour deltas**. The program reconstructs:
+- Production: Extra Trees, 205 predictors.
+- EC +12 h: Histogram Gradient Boosting, 202 predictors.
+- pH +12 h: Ridge α=0.01, 202 predictors.
 
-- `EC_predicted_t12 = EC_now + predicted_EC_delta`
-- `pH_predicted_t12 = pH_now + predicted_pH_delta`
+`metadata.json` is checked at startup so an old Ridge-EC or pre-v4 artifact fails loudly.
 
-## Recommended transmitter payload
+## Final 12-h feature construction
 
-Transmit these seven values in this exact order:
+The live adapter mirrors the final v4 feature naming and causal direction:
 
-`Tair,Rhair,CO2air,Tot_PAR,EC_drain_PC,pH_drain_PC,Cum_irr`
+- hourly **median** aggregation;
+- broad EC/pH QC bounds used by the paper;
+- past-only `ffill(limit=3)` for feature histories;
+- lags at 1, 3, 6, 12, 24, and 48 h;
+- rolling mean, sample SD, and trend at 3, 6, 12, 24, and 48 h;
+- hour/day-of-year sine and cosine;
+- current EC/pH taken from the **unfilled observed hourly median**;
+- model outputs interpreted as 12-h changes and reconstructed as current + predicted change.
 
-A JSON payload with the same names is also accepted.
+The final source variables are:
 
-The older eight-value payload is accepted only for compatibility. It needs
-configured approximations for CO2, PAR, EC and cumulative irrigation, which are
-explicitly recorded in the status/log.
+`CO2air, Cum_irr, EC_drain_PC, HumDef, Rhair, Tair, Tot_PAR, Tot_PAR_Lamps, pH_drain_PC`
 
-## Installation on Raspberry Pi
+## HTU input mismatch and advisory boundary
+
+The current HTU sensing schema does not provide perfectly equivalent measurements for every AGC variable. The compatibility decoder therefore logs each missing/fallback/converted field. The old eight-value ESP32 payload is accepted, but:
+
+- TDS→EC is an approximate interface conversion;
+- lux→PAR is an approximate interface conversion if a factor is configured;
+- moisture is **not** substituted for cumulative irrigation;
+- missing CO2/HumDef/lamp-PAR values are left missing unless an explicit configuration fallback is supplied;
+- missing predictor values are handled by the frozen training-fitted pipeline imputer.
+
+These live outputs are suitable for engineering demonstration/advisory visualization only. They do not establish lettuce-specific prediction accuracy.
+
+## Production advisory output
+
+The scientific production task predicts **recorded harvest-event ProdA**, not a weekly target. Production execution is disabled by default because the 205-feature AGC model contains source variables not all present on the HTU platform.
+
+When production is enabled and `harvest_state.example.json` is replaced with current crop/harvest state, the adapter fills the subset of production features that can be constructed from the live stream and leaves unmapped features missing for the frozen model's training-median imputer. Feature completeness is logged with every prediction.
+
+## Setup
 
 ```bash
 python3 -m venv ~/paper2-live-env
 source ~/paper2-live-env/bin/activate
-pip install numpy pandas scikit-learn joblib pyserial requests
+pip install -r requirements-raspberry-pi.txt
+cp configs/live_lora_model_config.example.json configs/live_lora_model_config.local.json
 ```
 
-Run first without cloud uploads:
-
-```bash
-python live_lora_p2p_models_to_thingspeak.py \
-  --config live_lora_model_config.json \
-  --dry-run
-```
-
-Then run normally:
-
-```bash
-python live_lora_p2p_models_to_thingspeak.py \
-  --config live_lora_model_config.json
-```
-
-On systems where `/dev/serial0` requires elevated permission, add the user to
-the `dialout` group rather than running the whole inference process as root:
+Add the Raspberry Pi user to the serial-access group if needed:
 
 ```bash
 sudo usermod -aG dialout "$USER"
 ```
 
-Log out and back in after that command.
+Log out and back in after changing group membership.
 
-## ThingSpeak mappings
+## Dry-run first
 
-### Channel A
+From the repository root:
+
+```bash
+python raspberry_pi/live_lora_p2p_models_to_thingspeak.py \
+  --config configs/live_lora_model_config.local.json \
+  --dry-run
+```
+
+Only after the local log and predictions are checked should ThingSpeak write keys be added to the local configuration.
+
+## ThingSpeak mapping
+
+### Channel A — measured/interface fields
+
 1. Tair
 2. Rhair
 3. CO2air
 4. Tot_PAR
-5. EC_drain_PC
-6. pH_drain_PC
+5. measured EC
+6. measured pH
 7. Cum_irr
+8. hourly feature completeness
 
-### Channel B
+### Channel B — advisory predictions
+
 1. measured EC
-2. predicted EC at +12 h
+2. EC +12 h advisory forecast
 3. measured pH
-4. predicted pH at +12 h
-5. weekly production-indicator prediction
-6. forecast age in minutes
+4. pH +12 h advisory forecast
+5. ProdA advisory prediction (when enabled)
+6. feature completeness
 7. RSSI
 8. SNR
 
-## Production model warning
+## Final target-device benchmark
 
-Paper trained the production model on measured harvest events from the
-greenhouse study. Predictions in a different crop, facility or sensor domain
-are extrapolations and reported as decision-support outputs until
-independently validated.
+Run from the repository root:
+
+```bash
+python raspberry_pi/benchmark_v4_selected_models.py
+```
+
+Default paths now point to `models/` and `raspberry_pi/results/`. The script verifies the final model families before timing and records package versions on new runs.
+
+The manuscript-reported benchmark files already in `raspberry_pi/results/` are the definitive original target-device evidence; do not overwrite them merely to change package metadata without documenting a new benchmark run.

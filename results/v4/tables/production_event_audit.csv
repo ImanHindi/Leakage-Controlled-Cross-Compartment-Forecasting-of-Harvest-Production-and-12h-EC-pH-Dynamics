@@ -1,0 +1,7 @@
+team,raw_nonnull_ProdA_rows,valid_in_period_measured_events,supervised_events_after_history,first_event,last_event
+AICU,24,24,23,2020-02-14,2020-05-29
+TheAutomators,23,23,22,2020-02-19,2020-05-29
+Automatoes,23,23,22,2020-02-19,2020-05-29
+Digilog,23,23,22,2020-02-19,2020-05-29
+IUACAAS,23,23,22,2020-02-19,2020-05-29
+Reference,24,23,22,2020-02-19,2020-05-29

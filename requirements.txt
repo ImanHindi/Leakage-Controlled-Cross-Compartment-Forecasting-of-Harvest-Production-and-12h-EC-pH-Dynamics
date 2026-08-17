@@ -1,14 +1,12 @@
-<<<<<<< HEAD
-joblib==1.4.2
-numpy==1.26.4
-pandas==2.2.2
-requests==2.32.3
+# Reproducibility baseline for the executed v4 analysis.
+# Final model joblib files record scikit-learn 1.4.2.
+joblib>=1.3,<2
+matplotlib>=3.7,<4
+numpy>=1.24,<3
+openpyxl>=3.1,<4
+pandas>=2.0,<3
+psutil>=5.9,<8
+py7zr>=0.20,<1
+requests>=2.31,<3
 scikit-learn==1.4.2
-=======
-joblib>=1.3
-numpy>=1.24
-pandas>=2.0
-pyserial>=3.5
-requests>=2.31
-scikit-learn>=1.3
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
+scipy>=1.10,<2

@@ -1,71 +1,50 @@
 #!/usr/bin/env python3
 """
-Live LoRa-P2P receiver -> Paper-2 models -> two ThingSpeak channels.
+Final Paper 2 live advisory adapter.
 
-This program replaces CSV replay with live RAK3172 LoRa P2P reception.
-It:
-1) receives greenhouse measurements from the ESP32/RAK3172;
-2) logs every accepted packet locally;
-3) aggregates measurements to hourly medians;
-4) builds the lag/rolling features described in Paper 2;
-5) predicts EC and pH 12 hours ahead using trained delta models;
-6) optionally predicts the weekly production indicator using the trained
-   Extra-Trees model;
-7) uploads raw measurements and model outputs to two ThingSpeak channels.
+HTU sensors -> ESP32/RAK3172 LoRa P2P -> Raspberry Pi -> frozen v4 models
+-> ThingSpeak -> Power BI.
 
-IMPORTANT
----------
-The exact serialized models, scalers/imputers and feature names used during
-training must be supplied in the JSON configuration. The code never silently
-uses CSV forecasts and never replaces missing model inputs with soil moisture.
+Scientific boundary
+-------------------
+This script is an engineering integration/advisory-monitoring adapter. The
+quantitative paper results come from the untouched AICU evaluation in the
+executed v4 notebook, not from this live HTU stream. The AGC-trained models
+have not been prospectively validated for lettuce. Missing or non-equivalent
+HTU variables are therefore logged as interface adaptations and model outputs
+must not be used as autonomous dosing commands.
 
-Recommended LoRa payload
-------------------------
-CSV:
-    Tair,Rhair,CO2air,Tot_PAR,EC_drain_PC,pH_drain_PC,Cum_irr
+Final artifacts
+---------------
+production_model.joblib : Extra Trees (205 predictors; harvest-event ProdA)
+ec_12h_model.joblib     : Histogram Gradient Boosting (202 predictors; ΔEC)
+ph_12h_model.joblib     : Ridge alpha=0.01 (202 predictors; ΔpH)
+metadata.json            : exact feature order and model-family metadata
 
-or JSON:
-    {"Tair":25.2,"Rhair":71.0,"CO2air":430,"Tot_PAR":120,
-     "EC_drain_PC":2.1,"pH_drain_PC":5.8,"Cum_irr":12.4}
+Recommended direct payload (JSON)
+---------------------------------
+{
+  "Tair": 24.8,
+  "Rhair": 67.5,
+  "CO2air": 430.0,
+  "Tot_PAR": 115.0,
+  "Tot_PAR_Lamps": 0.0,
+  "HumDef": 4.2,
+  "EC_drain_PC": 1.85,
+  "pH_drain_PC": 6.10,
+  "Cum_irr": 12.4
+}
 
-Legacy eight-value payloads from the earlier ESP32 code are also supported:
-    moisture,lux,tds,pH,temperature,humidity,nutrientStatus,waterPumpStatus
-
-For that legacy format:
-- EC is estimated as TDS / tds_ec_factor;
-- PAR is estimated as lux * lux_to_par_factor;
-- CO2 must be supplied as a configured fallback;
-- cumulative irrigation is integrated from pump status and configured flow.
-These substitutions are explicitly flagged in the log and should not be
-presented as equivalent to directly measured model inputs.
-
-ThingSpeak channel A
---------------------
-field1 Tair
-field2 Rhair
-field3 CO2air
-field4 Tot_PAR
-field5 EC_drain_PC
-field6 pH_drain_PC
-field7 Cum_irr
-
-ThingSpeak channel B
---------------------
-field1 EC_measured
-field2 EC_predicted_t12
-field3 pH_measured
-field4 pH_predicted_t12
-field5 Weekly_ProdA_prediction
-field6 ForecastAgeMinutes
-field7 RSSI (when reported by the radio)
-field8 SNR  (when reported by the radio)
+A 9-value CSV payload in the same order is also accepted. The earlier HTU
+8-value payload is supported as a compatibility mode:
+moisture,lux,tds,pH,temperature,humidity,nutrientStatus,waterPumpStatus
+It necessarily uses/omits non-equivalent variables and is always flagged.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import datetime as dt
 import json
 import math
 import re
@@ -74,22 +53,38 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
 import requests
-import serial
+
+try:
+    import serial
+except ImportError:
+    serial = None
 
 
 THINGSPEAK_UPDATE_URL = "https://api.thingspeak.com/update.json"
-BASE_VARIABLES = [
+HOURLY_BASE_VARIABLES = [
+    "CO2air",
+    "Cum_irr",
+    "EC_drain_PC",
+    "HumDef",
+    "Rhair",
+    "Tair",
+    "Tot_PAR",
+    "Tot_PAR_Lamps",
+    "pH_drain_PC",
+]
+DIRECT_CSV_ORDER = [
     "Tair",
     "Rhair",
     "CO2air",
     "Tot_PAR",
-    "HD",
+    "Tot_PAR_Lamps",
+    "HumDef",
     "EC_drain_PC",
     "pH_drain_PC",
     "Cum_irr",
@@ -100,325 +95,371 @@ _STOP = False
 
 
 def request_stop(signum: int, frame: Any) -> None:
+    del signum, frame
     global _STOP
     _STOP = True
-    print("\nStop requested; finishing the current cycle.", flush=True)
+    print("\nStop requested; finishing current cycle.", flush=True)
 
 
-def safe_float(value: Any) -> float | None:
+def safe_float(value: Any) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
+        return float("nan")
+    return number if math.isfinite(number) else float("nan")
 
 
-def clean_number(value: Any) -> str | None:
-    number = safe_float(value)
-    return None if number is None else f"{number:.10g}"
+def is_finite(value: Any) -> bool:
+    return math.isfinite(safe_float(value))
 
 
-def normalize_name(text: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(text).lower())
+def parse_on_off(value: Any) -> bool | None:
+    text = str(value).strip().lower()
+    if text in {"1", "on", "true", "yes", "running", "active"}:
+        return True
+    if text in {"0", "off", "false", "no", "stopped", "inactive"}:
+        return False
+    return None
 
 
-def humidity_deficit_kpa(t_c: float, rh_pct: float) -> float:
-    """Vapour-pressure/humidity deficit in kPa."""
-    saturation = 0.6108 * math.exp((17.27 * t_c) / (t_c + 237.3))
-    return saturation * max(0.0, 1.0 - rh_pct / 100.0)
-
-
-def linear_trend(values: pd.Series) -> float:
-    y = pd.to_numeric(values, errors="coerce").to_numpy(dtype=float)
-    mask = np.isfinite(y)
+def rolling_slope(values: np.ndarray) -> float:
+    arr = np.asarray(values, dtype=float)
+    mask = np.isfinite(arr)
     if mask.sum() < 2:
         return float("nan")
-    x = np.arange(len(y), dtype=float)[mask]
-    return float(np.polyfit(x, y[mask], 1)[0])
+    x = np.arange(len(arr), dtype=float)[mask]
+    y = arr[mask]
+    return float(np.polyfit(x, y, 1)[0])
+
+
+def short_history_slope(values: list[float]) -> float:
+    arr = np.asarray([v for v in values if math.isfinite(v)], dtype=float)
+    if len(arr) < 2:
+        return 0.0
+    return float(np.polyfit(np.arange(len(arr), dtype=float), arr, 1)[0])
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def resolve_relative(value: str, base_dir: Path) -> Path:
+    path = Path(value).expanduser()
+    return path.resolve() if path.is_absolute() else (base_dir / path).resolve()
+
+
+def model_class_name(model: Any) -> str:
+    if hasattr(model, "named_steps") and "model" in model.named_steps:
+        return model.named_steps["model"].__class__.__name__
+    return model.__class__.__name__
+
+
+class FinalModels:
+    def __init__(self, config: dict[str, Any], base_dir: Path):
+        spec = config["models"]
+        metadata_path = resolve_relative(spec["metadata"], base_dir)
+        self.metadata = load_json(metadata_path)
+
+        self.production = joblib.load(resolve_relative(spec["production"], base_dir))
+        self.ec = joblib.load(resolve_relative(spec["ec_12h"], base_dir))
+        self.ph = joblib.load(resolve_relative(spec["ph_12h"], base_dir))
+
+        self.production_features = list(self.metadata["production_features"])
+        self.hourly_features = list(self.metadata["hourly_features"])
+        self._validate()
+
+    def _validate(self) -> None:
+        expected_meta = {
+            "production_model_family": "Extra Trees",
+            "ec_model_family": "Histogram Gradient Boosting",
+            "ph_model_family": "Ridge",
+        }
+        for key, expected in expected_meta.items():
+            actual = self.metadata.get(key)
+            if actual != expected:
+                raise RuntimeError(f"Wrong final model metadata: {key}={actual!r}; expected {expected!r}")
+
+        expected_classes = {
+            "Production": (self.production, "ExtraTreesRegressor"),
+            "EC": (self.ec, "HistGradientBoostingRegressor"),
+            "pH": (self.ph, "Ridge"),
+        }
+        for label, (model, expected) in expected_classes.items():
+            actual = model_class_name(model)
+            if actual != expected:
+                raise RuntimeError(f"{label} artifact is {actual}; expected {expected}")
+
+        if len(self.production_features) != 205:
+            raise RuntimeError(f"Expected 205 production features; found {len(self.production_features)}")
+        if len(self.hourly_features) != 202:
+            raise RuntimeError(f"Expected 202 hourly features; found {len(self.hourly_features)}")
+
+        ph_est = self.ph.named_steps["model"] if hasattr(self.ph, "named_steps") else self.ph
+        if not np.isclose(float(getattr(ph_est, "alpha", np.nan)), 0.01):
+            raise RuntimeError("Final pH artifact is not Ridge(alpha=0.01)")
+
+    @staticmethod
+    def _predict(model: Any, features: list[str], row: dict[str, Any]) -> float:
+        ordered = {name: safe_float(row.get(name)) for name in features}
+        X = pd.DataFrame([ordered], columns=features)
+        return float(np.asarray(model.predict(X)).reshape(-1)[0])
+
+    def predict_ec_delta(self, row: dict[str, Any]) -> float:
+        return self._predict(self.ec, self.hourly_features, row)
+
+    def predict_ph_delta(self, row: dict[str, Any]) -> float:
+        return self._predict(self.ph, self.hourly_features, row)
+
+    def predict_production(self, row: dict[str, Any]) -> float:
+        return self._predict(self.production, self.production_features, row)
 
 
 @dataclass
 class RadioPacket:
     timestamp: pd.Timestamp
-    values: dict[str, Any]
+    values: dict[str, float]
+    raw_text: str
     rssi: float | None = None
     snr: float | None = None
-    raw_text: str = ""
-    approximations: tuple[str, ...] = ()
+    adaptations: tuple[str, ...] = ()
 
 
-class ModelArtifact:
-    """Loads a scikit-learn model or pipeline plus optional preprocessing."""
+class PacketDecoder:
+    def __init__(self, config: dict[str, Any]):
+        live = config.get("live_input", {})
+        self.tds_ec_factor = float(live.get("tds_ec_factor", 500.0))
+        self.lux_to_par_factor = safe_float(live.get("lux_to_par_factor"))
+        self.co2_fallback = safe_float(live.get("co2_fallback_ppm"))
+        self.humdef_fallback = safe_float(live.get("humdef_fallback"))
+        self.lamp_par_fallback = safe_float(live.get("tot_par_lamps_fallback"))
+        self.irrigation_flow_lph = max(0.0, safe_float(live.get("irrigation_flow_lph", 0.0)))
+        self.cumulative_irrigation = safe_float(live.get("initial_cumulative_irrigation_l", 0.0))
+        if not math.isfinite(self.cumulative_irrigation):
+            self.cumulative_irrigation = 0.0
+        self.last_time: pd.Timestamp | None = None
 
-    def __init__(self, name: str, spec: dict[str, Any], base_dir: Path):
-        self.name = name
-        self.spec = spec
-        self.kind = str(spec.get("prediction_kind", "direct")).lower()
+    def _legacy_packet(self, parts: list[str], now: pd.Timestamp) -> tuple[dict[str, float], list[str]]:
+        moisture, lux, tds, ph, temperature, humidity, nutrient_status, water_pump_status = parts
+        del moisture, nutrient_status
+        adaptations = ["legacy_8_field_packet"]
 
-        self.model = joblib.load(self._path(spec["model"], base_dir))
-        self.imputer = (
-            joblib.load(self._path(spec["imputer"], base_dir))
-            if spec.get("imputer")
-            else None
+        tds_v = safe_float(tds)
+        lux_v = safe_float(lux)
+        ec = tds_v / self.tds_ec_factor if math.isfinite(tds_v) and self.tds_ec_factor > 0 else float("nan")
+        if math.isfinite(ec):
+            adaptations.append("TDS_to_EC_approximation")
+
+        par = (
+            lux_v * self.lux_to_par_factor
+            if math.isfinite(lux_v) and math.isfinite(self.lux_to_par_factor)
+            else float("nan")
         )
-        self.scaler = (
-            joblib.load(self._path(spec["scaler"], base_dir))
-            if spec.get("scaler")
-            else None
-        )
-        self.feature_names = self._load_feature_names(spec, base_dir)
+        if math.isfinite(par):
+            adaptations.append("lux_to_PAR_approximation")
 
-    @staticmethod
-    def _path(value: str, base_dir: Path) -> Path:
-        path = Path(value).expanduser()
-        return path if path.is_absolute() else base_dir / path
+        # Never substitute the moisture measurement for cumulative irrigation.
+        pump_on = parse_on_off(water_pump_status)
+        if self.last_time is not None and pump_on is True and self.irrigation_flow_lph > 0:
+            elapsed_h = max(0.0, (now - self.last_time).total_seconds() / 3600.0)
+            self.cumulative_irrigation += self.irrigation_flow_lph * elapsed_h
+            adaptations.append("Cum_irr_integrated_from_pump_state_and_configured_flow")
+        elif self.irrigation_flow_lph <= 0:
+            adaptations.append("Cum_irr_not_directly_measured")
 
-    def _load_feature_names(
-        self, spec: dict[str, Any], base_dir: Path
-    ) -> list[str]:
-        if spec.get("features"):
-            value = spec["features"]
-            if isinstance(value, list):
-                return [str(item) for item in value]
-            feature_path = self._path(str(value), base_dir)
-            if feature_path.suffix.lower() == ".json":
-                loaded = json.loads(feature_path.read_text(encoding="utf-8"))
+        values = {
+            "CO2air": self.co2_fallback,
+            "Cum_irr": self.cumulative_irrigation,
+            "EC_drain_PC": ec,
+            "HumDef": self.humdef_fallback,
+            "Rhair": safe_float(humidity),
+            "Tair": safe_float(temperature),
+            "Tot_PAR": par,
+            "Tot_PAR_Lamps": self.lamp_par_fallback,
+            "pH_drain_PC": safe_float(ph),
+        }
+        for key in ("CO2air", "HumDef", "Tot_PAR_Lamps"):
+            if not math.isfinite(values[key]):
+                adaptations.append(f"{key}_missing_imputed_by_frozen_pipeline")
             else:
-                loaded = joblib.load(feature_path)
-            if isinstance(loaded, dict):
-                for key in ("features", "feature_names", "columns"):
-                    if key in loaded:
-                        return [str(item) for item in loaded[key]]
-            return [str(item) for item in loaded]
+                adaptations.append(f"{key}_configured_fallback")
+        return values, adaptations
 
-        for obj in (self.model, self.scaler, self.imputer):
-            names = getattr(obj, "feature_names_in_", None)
-            if names is not None:
-                return [str(item) for item in names]
+    def decode(self, text: str, rssi: float | None, snr: float | None) -> RadioPacket:
+        now = pd.Timestamp.now(tz="UTC").floor("s")
+        adaptations: list[str] = []
 
-        raise ValueError(
-            f"{self.name}: feature names are required. Add a 'features' list "
-            "or feature-manifest path to the configuration."
-        )
-
-    def predict(self, feature_row: dict[str, float]) -> float:
-        aliases = build_normalized_feature_lookup(feature_row)
-        missing: list[str] = []
-        ordered: dict[str, float] = {}
-
-        for required in self.feature_names:
-            if required in feature_row:
-                ordered[required] = feature_row[required]
-                continue
-            normalized = normalize_name(required)
-            if normalized in aliases:
-                ordered[required] = aliases[normalized]
+        if text.lstrip().startswith("{"):
+            payload = json.loads(text)
+            values = {name: safe_float(payload.get(name)) for name in HOURLY_BASE_VARIABLES}
+            for name, value in values.items():
+                if not math.isfinite(value):
+                    adaptations.append(f"{name}_missing_imputed_by_frozen_pipeline")
+        else:
+            parts = [p.strip() for p in text.split(",")]
+            if len(parts) == len(DIRECT_CSV_ORDER):
+                values = {name: safe_float(value) for name, value in zip(DIRECT_CSV_ORDER, parts)}
+                for name, value in values.items():
+                    if not math.isfinite(value):
+                        adaptations.append(f"{name}_missing_imputed_by_frozen_pipeline")
+            elif len(parts) == 8:
+                values, adaptations = self._legacy_packet(parts, now)
             else:
-                missing.append(required)
+                raise ValueError(f"Expected JSON, 9-value direct CSV, or 8-value legacy CSV; received {len(parts)} fields")
 
-        if missing:
-            preview = ", ".join(missing[:15])
-            raise KeyError(
-                f"{self.name}: {len(missing)} trained features cannot be "
-                f"constructed from live history. First missing: {preview}"
-            )
+        # Same broad QC bounds used in the paper. These are plausibility filters, not crop setpoints.
+        ec = values.get("EC_drain_PC", float("nan"))
+        ph = values.get("pH_drain_PC", float("nan"))
+        if math.isfinite(ec) and not (0.5 <= ec <= 12.0):
+            values["EC_drain_PC"] = float("nan")
+            adaptations.append("EC_outside_paper_QC_bound")
+        if math.isfinite(ph) and not (3.0 <= ph <= 8.5):
+            values["pH_drain_PC"] = float("nan")
+            adaptations.append("pH_outside_paper_QC_bound")
 
-        X: Any = pd.DataFrame([ordered], columns=self.feature_names)
-        if self.imputer is not None:
-            X = self.imputer.transform(X)
-        if self.scaler is not None:
-            X = self.scaler.transform(X)
-
-        prediction = np.asarray(self.model.predict(X)).reshape(-1)
-        if prediction.size == 0:
-            raise RuntimeError(f"{self.name}: model returned no prediction.")
-        return float(prediction[0])
-
-
-def add_alias(store: dict[str, float], key: str, value: float) -> None:
-    if math.isfinite(value):
-        store[key] = float(value)
-
-
-def build_normalized_feature_lookup(features: dict[str, float]) -> dict[str, float]:
-    """Allow harmless punctuation/case differences in saved feature manifests."""
-    return {normalize_name(key): value for key, value in features.items()}
+        self.last_time = now
+        return RadioPacket(now, values, text, rssi, snr, tuple(sorted(set(adaptations))))
 
 
 class LiveFeatureEngine:
-    """Maintains raw packets and produces hourly features used in Paper 2."""
-
-    def __init__(self, history_hours: int = 24 * 21):
-        self.raw = pd.DataFrame()
-        self.history_hours = history_hours
+    def __init__(self, hourly_features: list[str], production_features: list[str], history_hours: int = 24 * 21):
+        self.hourly_features = hourly_features
+        self.production_features = production_features
+        self.history_hours = max(72, int(history_hours))
+        self.raw = pd.DataFrame(columns=HOURLY_BASE_VARIABLES, dtype=float)
 
     def append(self, packet: RadioPacket) -> None:
-        row = {"timestamp": packet.timestamp, **packet.values}
-        frame = pd.DataFrame([row]).set_index("timestamp")
-        self.raw = pd.concat([self.raw, frame]).sort_index()
+        row = pd.DataFrame([packet.values], index=[packet.timestamp])
+        self.raw = pd.concat([self.raw, row]).sort_index()
         self.raw = self.raw[~self.raw.index.duplicated(keep="last")]
         cutoff = packet.timestamp - pd.Timedelta(hours=self.history_hours)
         self.raw = self.raw.loc[self.raw.index >= cutoff]
 
-    def hourly(self) -> pd.DataFrame:
+    def hourly_observed(self) -> pd.DataFrame:
         if self.raw.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(columns=HOURLY_BASE_VARIABLES)
         numeric = self.raw.apply(pd.to_numeric, errors="coerce")
-        hourly = numeric.resample("1h").median()
-        # The paper interpolated only short internal gaps. Limit=3 prevents
-        # bridging longer missing periods.
-        hourly = hourly.interpolate(
-            method="time", limit=3, limit_area="inside"
-        )
-        return hourly
+        # Match the paper: hourly median from observed values.
+        return numeric.resample("1h").median()
 
-    def nutrient_features(self) -> tuple[dict[str, float], pd.Timestamp]:
-        hourly = self.hourly()
-        if hourly.empty:
-            raise RuntimeError("No hourly history is available.")
+    def nutrient_feature_row(self) -> tuple[dict[str, float], pd.Timestamp, float, float, float]:
+        observed = self.hourly_observed()
+        if observed.empty:
+            raise RuntimeError("No hourly data available")
+        valid_rows = observed.dropna(how="all")
+        if valid_rows.empty:
+            raise RuntimeError("No numeric hourly data available")
+        origin = valid_rows.index[-1]
+        observed = observed.loc[:origin]
 
-        latest_time = hourly.dropna(how="all").index[-1]
-        h = hourly.loc[:latest_time].copy()
+        # Match v4: feature histories use only past-only forward fill, limited to 3 h.
+        h = observed.ffill(limit=3)
+        feat = h.copy()
+        feat["hour_sin"] = np.sin(2 * np.pi * feat.index.hour / 24.0)
+        feat["hour_cos"] = np.cos(2 * np.pi * feat.index.hour / 24.0)
+        doy = feat.index.dayofyear
+        feat["doy_sin"] = np.sin(2 * np.pi * doy / 365.25)
+        feat["doy_cos"] = np.cos(2 * np.pi * doy / 365.25)
 
-        latest = h.iloc[-1]
-        feature: dict[str, float] = {}
-
-        # Current values and common aliases.
-        for variable in BASE_VARIABLES:
-            if variable in latest and pd.notna(latest[variable]):
-                add_alias(feature, variable, float(latest[variable]))
-
-        hour = latest_time.hour + latest_time.minute / 60.0
-        doy = latest_time.dayofyear
-        for key, value in {
-            "hour_sin": math.sin(2 * math.pi * hour / 24.0),
-            "hour_cos": math.cos(2 * math.pi * hour / 24.0),
-            "dayofyear_sin": math.sin(2 * math.pi * doy / 365.25),
-            "dayofyear_cos": math.cos(2 * math.pi * doy / 365.25),
-            "doy_sin": math.sin(2 * math.pi * doy / 365.25),
-            "doy_cos": math.cos(2 * math.pi * doy / 365.25),
-        }.items():
-            add_alias(feature, key, value)
-
-        for variable in BASE_VARIABLES:
-            if variable not in h:
-                continue
-            series = h[variable]
-
+        for col in HOURLY_BASE_VARIABLES:
             for lag in LAGS_H:
-                if len(series) > lag and pd.notna(series.iloc[-1 - lag]):
-                    value = float(series.iloc[-1 - lag])
-                    for key in (
-                        f"{variable} (lag {lag} h)",
-                        f"{variable}_lag_{lag}h",
-                        f"{variable}_lag{lag}",
-                    ):
-                        add_alias(feature, key, value)
-
+                feat[f"{col}__lag{lag}"] = h[col].shift(lag)
             for window in ROLLING_H:
-                values = series.tail(window)
-                if values.notna().sum() < window:
-                    continue
-                mean = float(values.mean())
-                sd = float(values.std(ddof=0))
-                trend = linear_trend(values)
-                variants = {
-                    f"{variable} (mean {window} h)": mean,
-                    f"{variable}_mean_{window}h": mean,
-                    f"{variable}_roll_mean_{window}h": mean,
-                    f"{variable} (SD {window} h)": sd,
-                    f"{variable}_sd_{window}h": sd,
-                    f"{variable}_std_{window}h": sd,
-                    f"{variable} (trend {window} h)": trend,
-                    f"{variable}_trend_{window}h": trend,
-                }
-                for key, value in variants.items():
-                    add_alias(feature, key, value)
+                roll = h[col].rolling(window, min_periods=window)
+                feat[f"{col}__mean{window}"] = roll.mean()
+                feat[f"{col}__std{window}"] = roll.std(ddof=1)
+                feat[f"{col}__trend{window}"] = roll.apply(rolling_slope, raw=True)
 
-        return feature, latest_time
+        latest = feat.loc[origin]
+        row = {name: safe_float(latest.get(name)) for name in self.hourly_features}
+        completeness = sum(math.isfinite(v) for v in row.values()) / len(row)
 
-    def production_features(
-        self,
-        harvest_state: dict[str, Any],
-    ) -> tuple[dict[str, float], pd.Timestamp]:
-        hourly = self.hourly()
+        # Current states must come from unfilled observed hourly medians, as in v4.
+        current_ec = safe_float(observed.loc[origin, "EC_drain_PC"])
+        current_ph = safe_float(observed.loc[origin, "pH_drain_PC"])
+        if not math.isfinite(current_ec) or not math.isfinite(current_ph):
+            raise RuntimeError("Current observed EC/pH is unavailable after QC")
+        return row, origin, current_ec, current_ph, completeness
+
+    def _daily_live_table(self) -> pd.DataFrame:
+        hourly = self.hourly_observed()
         if hourly.empty:
-            raise RuntimeError("No hourly history is available.")
+            return pd.DataFrame()
+        rows: dict[str, pd.Series] = {}
+        for col in ["CO2air", "EC_drain_PC", "HumDef", "Rhair", "Tair", "pH_drain_PC"]:
+            rows[f"daily_mean__{col}"] = hourly[col].resample("1D").mean()
+        rows["daily_max__Cum_irr"] = hourly["Cum_irr"].resample("1D").max()
+        # Approximate DLI from hourly median PAR. Kept explicitly advisory and logged via completeness/adaptation.
+        rows["DLI__Tot_PAR"] = (hourly["Tot_PAR"].resample("1D").sum(min_count=1) * 3600.0 / 1e6)
+        rows["DLI__Tot_PAR_Lamps"] = (hourly["Tot_PAR_Lamps"].resample("1D").sum(min_count=1) * 3600.0 / 1e6)
+        return pd.DataFrame(rows).sort_index()
 
-        latest_time = hourly.dropna(how="all").index[-1]
-        h = hourly.loc[:latest_time]
-        feature: dict[str, float] = {}
+    def production_feature_row(self, state: dict[str, Any]) -> tuple[dict[str, float], float, list[str]]:
+        row = {name: float("nan") for name in self.production_features}
+        notes: list[str] = ["live_production_partial_feature_mapping"]
+        now = self.raw.index.max() if not self.raw.empty else pd.Timestamp.now(tz="UTC")
 
-        last_harvest_text = harvest_state.get("last_harvest_timestamp")
-        last_harvest = (
-            pd.Timestamp(last_harvest_text)
-            if last_harvest_text
-            else latest_time - pd.Timedelta(days=14)
-        )
-        inter = h.loc[h.index > last_harvest]
+        previous = [safe_float(v) for v in state.get("previous_production_values", [])]
+        previous = [v for v in previous if math.isfinite(v)]
+        last_harvest = pd.to_datetime(state.get("last_harvest_timestamp"), utc=True, errors="coerce")
+        crop_start = pd.to_datetime(state.get("crop_start_timestamp"), utc=True, errors="coerce")
 
-        windows: list[tuple[str, pd.DataFrame]] = [
-            ("7 d", h.tail(24 * 7)),
-            ("14 d", h.tail(24 * 14)),
-            ("inter-harvest", inter),
-        ]
-
-        for label, frame in windows:
-            if frame.empty:
-                continue
-            for variable in BASE_VARIABLES:
-                if variable not in frame:
-                    continue
-                values = frame[variable].dropna()
-                if values.empty:
-                    continue
-                stats = {
-                    "mean": float(values.mean()),
-                    "SD": float(values.std(ddof=0)),
-                    "min": float(values.min()),
-                    "max": float(values.max()),
-                    "sum": float(values.sum()),
-                    "trend": linear_trend(values),
-                }
-                token = label.replace(" ", "_").replace("-", "_")
-                for stat, value in stats.items():
-                    for key in (
-                        f"{variable} ({stat} {label})",
-                        f"{variable}_{stat.lower()}_{token}",
-                    ):
-                        add_alias(feature, key, value)
-
-        previous = [
-            float(x)
-            for x in harvest_state.get("previous_production_values", [])
-            if safe_float(x) is not None
-        ]
+        if pd.notna(last_harvest):
+            row["days_since_prev"] = (now - last_harvest).total_seconds() / 86400.0
+        if pd.notna(crop_start):
+            row["crop_day"] = (now - crop_start).total_seconds() / 86400.0
+        if state.get("harvest_index") is not None:
+            row["harvest_index"] = safe_float(state.get("harvest_index"))
         if previous:
-            add_alias(feature, "previous_harvest", previous[-1])
-            add_alias(feature, "ProdA_previous", previous[-1])
-            add_alias(
-                feature,
-                "previous_3_harvest_mean",
-                float(np.mean(previous[-3:])),
-            )
-            add_alias(feature, "ProdA_previous3_mean", float(np.mean(previous[-3:])))
+            row["prev_ProdA"] = previous[-1]
+            tail = previous[-3:]
+            row["prev3_mean"] = float(np.mean(tail))
+            row["prev3_std"] = float(np.std(tail, ddof=0))
+            row["prev3_trend"] = short_history_slope(tail)
 
-        days_since = (latest_time - last_harvest).total_seconds() / 86400.0
-        add_alias(feature, "days_since_harvest", days_since)
-        add_alias(feature, "inter_harvest_days", days_since)
+        daily = self._daily_live_table()
+        if not daily.empty:
+            windows: dict[str, pd.DataFrame] = {
+                "w7__": daily.loc[daily.index >= now.floor("D") - pd.Timedelta(days=7)],
+                "w14__": daily.loc[daily.index >= now.floor("D") - pd.Timedelta(days=14)],
+            }
+            if pd.notna(last_harvest):
+                windows["int__"] = daily.loc[daily.index >= last_harvest.floor("D")]
 
-        return feature, latest_time
+            for prefix, frame in windows.items():
+                if frame.empty:
+                    continue
+                for daily_col in frame.columns:
+                    s = pd.to_numeric(frame[daily_col], errors="coerce")
+                    for stat, value in {
+                        "mean": s.mean(),
+                        "std": s.std(ddof=0),
+                        "min": s.min(),
+                        "max": s.max(),
+                    }.items():
+                        key = f"{prefix}{stat}__{daily_col}"
+                        if key in row:
+                            row[key] = safe_float(value)
+
+        finite = sum(math.isfinite(safe_float(v)) for v in row.values())
+        completeness = finite / len(row)
+        notes.append(f"production_feature_completeness={completeness:.3f}")
+        notes.append("unmapped_production_features_use_training_median_imputation")
+        notes.append("hourly_PAR_to_DLI_is_live_interface_approximation")
+        return row, completeness, notes
 
 
 class LoRaReceiver:
     def __init__(self, config: dict[str, Any]):
+        if serial is None:
+            raise RuntimeError("pyserial is required for live LoRa use. Install requirements-raspberry-pi.txt first.")
         radio = config["radio"]
         self.port = str(radio.get("serial_port", "/dev/serial0"))
         self.baud = int(radio.get("baud_rate", 115200))
         self.frequency = int(radio.get("frequency_hz", 868000000))
         self.sf = int(radio.get("spreading_factor", 7))
-        self.bandwidth_code = int(radio.get("bandwidth_code", 0))
-        self.coding_rate_code = int(radio.get("coding_rate_code", 0))
+        self.bandwidth = int(radio.get("bandwidth_code", 0))
+        self.coding_rate = int(radio.get("coding_rate_code", 0))
         self.preamble = int(radio.get("preamble_symbols", 10))
         self.tx_power = int(radio.get("tx_power_dbm", 14))
         self.serial = serial.Serial(self.port, self.baud, timeout=1)
@@ -435,21 +476,17 @@ class LoRaReceiver:
         return lines
 
     def setup(self) -> None:
-        for command, wait in (
+        commands = [
             ("AT", 0.5),
             ("AT+PRECV=0", 0.2),
             ("AT+NWM=0", 0.5),
-            (
-                "AT+P2P="
-                f"{self.frequency}:{self.sf}:{self.bandwidth_code}:"
-                f"{self.coding_rate_code}:{self.preamble}:{self.tx_power}",
-                0.5,
-            ),
+            (f"AT+P2P={self.frequency}:{self.sf}:{self.bandwidth}:{self.coding_rate}:{self.preamble}:{self.tx_power}", 0.5),
             ("AT+PRECV=65535", 0.2),
-        ):
-            responses = self.send_at(command, wait)
-            print(f"{command}: {' | '.join(responses) if responses else 'sent'}")
-        print("LoRa P2P receiver ready.", flush=True)
+        ]
+        for command, wait in commands:
+            replies = self.send_at(command, wait)
+            print(f"{command}: {' | '.join(replies) if replies else 'sent'}")
+        print("LoRa P2P receiver ready.")
 
     def read_event(self) -> tuple[str, float | None, float | None] | None:
         if not self.serial.in_waiting:
@@ -457,266 +494,92 @@ class LoRaReceiver:
         line = self.serial.readline().decode("utf-8", errors="ignore").strip()
         if "+EVT:RXP2P" not in line:
             return None
-
-        # RAK firmware variants may report RSSI/SNR before the final HEX token.
         tokens = [token.strip() for token in line.split(":")]
         hex_payload = tokens[-1]
         if not re.fullmatch(r"[0-9A-Fa-f]+", hex_payload or ""):
             return None
-
-        numbers = [safe_float(token) for token in tokens[1:-1]]
-        finite = [x for x in numbers if x is not None]
+        numeric = [safe_float(token) for token in tokens[1:-1]]
+        finite = [v for v in numeric if math.isfinite(v)]
         rssi = finite[-2] if len(finite) >= 2 else None
         snr = finite[-1] if len(finite) >= 1 else None
-
         try:
             text = bytes.fromhex(hex_payload).decode("utf-8")
         except (ValueError, UnicodeDecodeError):
-            print(f"Rejected non-UTF8 payload: {hex_payload}", file=sys.stderr)
             return None
         return text.strip(), rssi, snr
+
+    def restart_receive(self) -> None:
+        self.send_at("AT+PRECV=65535", 0.05)
 
     def close(self) -> None:
         self.serial.close()
 
 
-class PacketDecoder:
-    def __init__(self, config: dict[str, Any]):
-        self.config = config
-        live = config.get("live_input", {})
-        self.tds_ec_factor = float(live.get("tds_ec_factor", 500.0))
-        self.lux_to_par = float(live.get("lux_to_par_factor", 0.0185))
-        self.co2_fallback = safe_float(live.get("co2_fallback_ppm"))
-        self.irrigation_flow_lph = float(
-            live.get("irrigation_flow_lph", 0.0)
-        )
-        self.cumulative_irrigation = float(
-            live.get("initial_cumulative_irrigation_l", 0.0)
-        )
-        self.last_packet_time: pd.Timestamp | None = None
-
-    def decode(
-        self,
-        text: str,
-        rssi: float | None,
-        snr: float | None,
-    ) -> RadioPacket:
-        now = pd.Timestamp.now().floor("s")
-        approximations: list[str] = []
-
-        if text.lstrip().startswith("{"):
-            payload = json.loads(text)
-            values = {key: payload.get(key) for key in BASE_VARIABLES if key != "HD"}
-            missing = [
-                key for key in BASE_VARIABLES
-                if key != "HD" and safe_float(values.get(key)) is None
-            ]
-            if missing:
-                raise ValueError(f"JSON packet is missing: {', '.join(missing)}")
-            values = {key: float(values[key]) for key in values}
-        else:
-            parts = [item.strip() for item in text.split(",")]
-            if len(parts) == 7:
-                names = [
-                    "Tair",
-                    "Rhair",
-                    "CO2air",
-                    "Tot_PAR",
-                    "EC_drain_PC",
-                    "pH_drain_PC",
-                    "Cum_irr",
-                ]
-                numbers = [safe_float(value) for value in parts]
-                if any(value is None for value in numbers):
-                    raise ValueError("The seven-value packet contains non-numeric data.")
-                values = dict(zip(names, (float(x) for x in numbers)))
-            elif len(parts) == 8:
-                moisture, lux, tds, ph, temp, rh = [
-                    safe_float(x) for x in parts[:6]
-                ]
-                if any(x is None for x in (moisture, lux, tds, ph, temp, rh)):
-                    raise ValueError("Legacy packet has invalid numeric fields.")
-                if self.co2_fallback is None:
-                    raise ValueError(
-                        "Legacy packet does not contain CO2air. Set "
-                        "live_input.co2_fallback_ppm or transmit the recommended "
-                        "seven model inputs."
-                    )
-
-                pump_on = str(parts[7]).strip().lower() in {
-                    "1", "on", "true", "running", "pump_on"
-                }
-                if self.last_packet_time is not None and pump_on:
-                    hours = max(
-                        0.0,
-                        (now - self.last_packet_time).total_seconds() / 3600.0,
-                    )
-                    self.cumulative_irrigation += self.irrigation_flow_lph * hours
-
-                values = {
-                    "Tair": float(temp),
-                    "Rhair": float(rh),
-                    "CO2air": float(self.co2_fallback),
-                    "Tot_PAR": float(lux) * self.lux_to_par,
-                    "EC_drain_PC": float(tds) / self.tds_ec_factor,
-                    "pH_drain_PC": float(ph),
-                    "Cum_irr": self.cumulative_irrigation,
-                }
-                approximations.extend(
-                    [
-                        "CO2air configured fallback",
-                        "PAR converted from lux",
-                        "EC converted from TDS",
-                        "Cum_irr integrated from pump status",
-                    ]
-                )
-            else:
-                raise ValueError(
-                    f"Expected JSON, 7 model values, or legacy 8 values; received "
-                    f"{len(parts)} values."
-                )
-
-        values["HD"] = humidity_deficit_kpa(values["Tair"], values["Rhair"])
-        self.last_packet_time = now
-        return RadioPacket(
-            timestamp=now,
-            values=values,
-            rssi=rssi,
-            snr=snr,
-            raw_text=text,
-            approximations=tuple(approximations),
-        )
-
-
-def load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def append_csv(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     exists = path.exists()
-    with path.open("a", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
+    with path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
         if not exists:
             writer.writeheader()
         writer.writerow(row)
 
 
-def post_thingspeak(
-    session: requests.Session,
-    api_key: str,
-    fields: dict[str, Any],
-    status: str,
-    timeout: float,
-) -> int:
+def post_thingspeak(session: requests.Session, api_key: str, fields: dict[str, Any], status: str, timeout: float) -> int:
+    if not api_key or api_key.startswith("REPLACE_"):
+        raise RuntimeError("ThingSpeak write API key is not configured")
     payload: dict[str, str] = {"api_key": api_key, "status": status[:255]}
-    for field, raw in fields.items():
-        value = clean_number(raw)
-        if value is not None:
-            payload[field] = value
-    response = session.post(
-        THINGSPEAK_UPDATE_URL, data=payload, timeout=timeout
-    )
+    for key, value in fields.items():
+        number = safe_float(value)
+        if math.isfinite(number):
+            payload[key] = f"{number:.10g}"
+    response = session.post(THINGSPEAK_UPDATE_URL, data=payload, timeout=timeout)
     response.raise_for_status()
     result = response.json()
     entry_id = int(result.get("entry_id", 0))
     if entry_id <= 0:
-        raise RuntimeError(f"ThingSpeak rejected the update: {result}")
+        raise RuntimeError(f"ThingSpeak rejected update: {result}")
     return entry_id
 
 
-def prediction_status(
-    packet: RadioPacket,
-    forecast_time: pd.Timestamp | None,
-    notes: Iterable[str],
-) -> str:
-    parts = [
-        f"source_timestamp={packet.timestamp.isoformat()}",
-        f"forecast_timestamp={forecast_time.isoformat() if forecast_time else ''}",
-    ]
-    if packet.approximations:
-        parts.append("approximations=" + "|".join(packet.approximations))
-    parts.extend(notes)
-    return ";".join(parts)
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config", type=Path, required=True,
-        help="Path to live_lora_model_config.json",
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Receive, log and predict without uploading to ThingSpeak.",
-    )
-    parser.add_argument(
-        "--max-packets", type=int, default=None,
-        help="Stop after this many accepted packets.",
-    )
+    parser = argparse.ArgumentParser(description="Final Paper 2 live LoRa advisory inference adapter")
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--dry-run", action="store_true", help="Receive/log/predict without ThingSpeak upload")
+    parser.add_argument("--max-packets", type=int, default=None)
     args = parser.parse_args()
 
     config_path = args.config.resolve()
     config = load_json(config_path)
     base_dir = config_path.parent
-
-    models_cfg = config["models"]
-    ec_model = ModelArtifact("EC 12-hour delta", models_cfg["ec"], base_dir)
-    ph_model = ModelArtifact("pH 12-hour delta", models_cfg["ph"], base_dir)
-    production_model = (
-        ModelArtifact("weekly production", models_cfg["production"], base_dir)
-        if models_cfg.get("production", {}).get("enabled", True)
-        else None
-    )
-
-    output_cfg = config.get("output", {})
-    log_path = Path(output_cfg.get("csv_log", "live_lora_predictions.csv"))
-    if not log_path.is_absolute():
-        log_path = base_dir / log_path
-
-    state_path = Path(
-        output_cfg.get("harvest_state_json", "harvest_state.json")
-    )
-    if not state_path.is_absolute():
-        state_path = base_dir / state_path
-    harvest_state = load_json(state_path) if state_path.exists() else {}
-
-    thing = config["thingspeak"]
-    min_upload_s = max(15.0, float(thing.get("minimum_interval_seconds", 20)))
-    timeout = float(thing.get("timeout_seconds", 30))
-    raw_key = str(thing["data_channel_write_api_key"]).strip()
-    prediction_key = str(
-        thing["prediction_channel_write_api_key"]
-    ).strip()
-
-    engine = LiveFeatureEngine(
-        history_hours=int(config.get("history_hours", 24 * 21))
-    )
+    models = FinalModels(config, base_dir)
     decoder = PacketDecoder(config)
+    engine = LiveFeatureEngine(models.hourly_features, models.production_features, config.get("history_hours", 24 * 21))
     receiver = LoRaReceiver(config)
+
+    output = config.get("output", {})
+    log_path = resolve_relative(output.get("csv_log", "../raspberry_pi/live_lora_predictions.csv"), base_dir)
+    harvest_path = resolve_relative(output.get("harvest_state_json", "harvest_state.example.json"), base_dir)
+    harvest_state = load_json(harvest_path) if harvest_path.exists() else {}
+    production_enabled = bool(config.get("production", {}).get("enabled", False))
+
+    thingspeak = config.get("thingspeak", {})
+    raw_key = str(thingspeak.get("data_channel_write_api_key", ""))
+    pred_key = str(thingspeak.get("prediction_channel_write_api_key", ""))
+    min_upload_s = max(15.0, float(thingspeak.get("minimum_interval_seconds", 20)))
+    timeout = float(thingspeak.get("timeout_seconds", 30))
+
+    print("Final model verification passed:")
+    print(f"  Production: {models.metadata['production_model_family']} ({len(models.production_features)} features)")
+    print(f"  EC: {models.metadata['ec_model_family']} ({len(models.hourly_features)} features)")
+    print(f"  pH: {models.metadata['ph_model_family']} alpha={models.metadata.get('ph_alpha')} ({len(models.hourly_features)} features)")
+    print("ADVISORY MODE: live HTU outputs are not lettuce-specific predictive validation and do not issue dosing commands.")
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
-
     session = requests.Session()
-    last_upload = 0.0
     accepted = 0
-    latest_ec12: float | None = None
-    latest_ph12: float | None = None
-    latest_production: float | None = None
-    latest_forecast_time: pd.Timestamp | None = None
-
-    print("Loading live Paper-2 inference pipeline...")
-    print(f"EC features: {len(ec_model.feature_names)}")
-    print(f"pH features: {len(ph_model.feature_names)}")
-    if production_model:
-        print(f"Production features: {len(production_model.feature_names)}")
-        print(
-            "WARNING: the production model was trained on the paper's greenhouse "
-            "domain. A live prediction on a different crop/facility is a "
-            "decision-support extrapolation, not a validated yield estimate."
-        )
-
+    last_upload = 0.0
     receiver.setup()
 
     try:
@@ -725,95 +588,75 @@ def main() -> int:
             if event is None:
                 time.sleep(0.01)
                 continue
-
-            raw_text, rssi, snr = event
+            text, rssi, snr = event
             try:
-                packet = decoder.decode(raw_text, rssi, snr)
+                packet = decoder.decode(text, rssi, snr)
             except Exception as exc:
-                print(f"Rejected packet '{raw_text}': {exc}", file=sys.stderr)
-                receiver.send_at("AT+PRECV=65535", 0.05)
+                print(f"Rejected packet: {exc}", file=sys.stderr)
+                receiver.restart_receive()
                 continue
 
             engine.append(packet)
             accepted += 1
-            notes: list[str] = []
-            forecast_age_minutes: float | None = None
+            ec12 = ph12 = proda = float("nan")
+            hourly_completeness = production_completeness = float("nan")
+            forecast_origin: pd.Timestamp | None = None
+            notes = list(packet.adaptations)
 
-            # The nutrient models require 48 h history because Paper 2 used
-            # lags/rolling windows up to 48 h.
             try:
-                nutrient_feature, feature_time = engine.nutrient_features()
-                ec_delta = ec_model.predict(nutrient_feature)
-                ph_delta = ph_model.predict(nutrient_feature)
-                current_ec = float(packet.values["EC_drain_PC"])
-                current_ph = float(packet.values["pH_drain_PC"])
-                latest_ec12 = (
-                    current_ec + ec_delta
-                    if ec_model.kind == "delta"
-                    else ec_delta
-                )
-                latest_ph12 = (
-                    current_ph + ph_delta
-                    if ph_model.kind == "delta"
-                    else ph_delta
-                )
-                latest_forecast_time = feature_time
-                forecast_age_minutes = (
-                    packet.timestamp - feature_time
-                ).total_seconds() / 60.0
+                feature_row, forecast_origin, current_ec, current_ph, hourly_completeness = engine.nutrient_feature_row()
+                ec12 = current_ec + models.predict_ec_delta(feature_row)
+                ph12 = current_ph + models.predict_ph_delta(feature_row)
+                notes.append(f"hourly_feature_completeness={hourly_completeness:.3f}")
             except Exception as exc:
-                notes.append(f"nutrient_model_wait={type(exc).__name__}")
+                notes.append(f"nutrient_forecast_wait={type(exc).__name__}")
                 print(f"Nutrient forecast not ready: {exc}")
 
-            if production_model is not None:
+            if production_enabled:
                 try:
-                    production_feature, _ = engine.production_features(
-                        harvest_state
-                    )
-                    latest_production = production_model.predict(
-                        production_feature
-                    )
+                    prod_row, production_completeness, prod_notes = engine.production_feature_row(harvest_state)
+                    proda = models.predict_production(prod_row)
+                    notes.extend(prod_notes)
                 except Exception as exc:
-                    notes.append(f"production_model_wait={type(exc).__name__}")
-                    print(f"Production forecast not ready: {exc}")
+                    notes.append(f"production_forecast_wait={type(exc).__name__}")
+                    print(f"Production advisory prediction not ready: {exc}")
 
-            row = {
-                "timestamp": packet.timestamp.isoformat(),
+            target_time = forecast_origin + pd.Timedelta(hours=12) if forecast_origin is not None else None
+            status = ";".join(sorted(set(notes)))
+            log_row = {
+                "packet_timestamp": packet.timestamp.isoformat(),
                 **packet.values,
-                "EC_predicted_t12": latest_ec12,
-                "pH_predicted_t12": latest_ph12,
-                "Weekly_ProdA_prediction": latest_production,
-                "forecast_timestamp": (
-                    latest_forecast_time.isoformat()
-                    if latest_forecast_time is not None else ""
-                ),
-                "forecast_age_minutes": forecast_age_minutes,
-                "rssi": packet.rssi,
-                "snr": packet.snr,
-                "approximations": "|".join(packet.approximations),
+                "EC_predicted_t12_advisory": ec12,
+                "pH_predicted_t12_advisory": ph12,
+                "ProdA_advisory_prediction": proda,
+                "forecast_origin": forecast_origin.isoformat() if forecast_origin is not None else "",
+                "forecast_target_time": target_time.isoformat() if target_time is not None else "",
+                "hourly_feature_completeness": hourly_completeness,
+                "production_feature_completeness": production_completeness,
+                "rssi": rssi,
+                "snr": snr,
+                "interface_adaptations": status,
                 "raw_payload": packet.raw_text,
             }
-            append_csv(log_path, row)
+            append_csv(log_path, log_row)
 
             raw_entry: int | str = "dry-run"
             pred_entry: int | str = "dry-run"
             now_mono = time.monotonic()
             if not args.dry_run and now_mono - last_upload >= min_upload_s:
-                status = prediction_status(
-                    packet, latest_forecast_time, notes
-                )
                 try:
                     raw_entry = post_thingspeak(
                         session,
                         raw_key,
                         {
-                            "field1": packet.values["Tair"],
-                            "field2": packet.values["Rhair"],
-                            "field3": packet.values["CO2air"],
-                            "field4": packet.values["Tot_PAR"],
-                            "field5": packet.values["EC_drain_PC"],
-                            "field6": packet.values["pH_drain_PC"],
-                            "field7": packet.values["Cum_irr"],
+                            "field1": packet.values.get("Tair"),
+                            "field2": packet.values.get("Rhair"),
+                            "field3": packet.values.get("CO2air"),
+                            "field4": packet.values.get("Tot_PAR"),
+                            "field5": packet.values.get("EC_drain_PC"),
+                            "field6": packet.values.get("pH_drain_PC"),
+                            "field7": packet.values.get("Cum_irr"),
+                            "field8": hourly_completeness,
                         },
                         status,
                         timeout,
@@ -821,45 +664,37 @@ def main() -> int:
                 except Exception as exc:
                     raw_entry = "ERROR"
                     print(f"Raw ThingSpeak upload failed: {exc}", file=sys.stderr)
-
                 try:
                     pred_entry = post_thingspeak(
                         session,
-                        prediction_key,
+                        pred_key,
                         {
-                            "field1": packet.values["EC_drain_PC"],
-                            "field2": latest_ec12,
-                            "field3": packet.values["pH_drain_PC"],
-                            "field4": latest_ph12,
-                            "field5": latest_production,
-                            "field6": forecast_age_minutes,
-                            "field7": packet.rssi,
-                            "field8": packet.snr,
+                            "field1": packet.values.get("EC_drain_PC"),
+                            "field2": ec12,
+                            "field3": packet.values.get("pH_drain_PC"),
+                            "field4": ph12,
+                            "field5": proda,
+                            "field6": production_completeness if production_enabled else hourly_completeness,
+                            "field7": rssi,
+                            "field8": snr,
                         },
                         status,
                         timeout,
                     )
                 except Exception as exc:
                     pred_entry = "ERROR"
-                    print(
-                        f"Prediction ThingSpeak upload failed: {exc}",
-                        file=sys.stderr,
-                    )
+                    print(f"Prediction ThingSpeak upload failed: {exc}", file=sys.stderr)
                 last_upload = now_mono
 
             print(
-                f"{packet.timestamp} | EC={packet.values['EC_drain_PC']:.3f} "
-                f"EC+12h={latest_ec12 if latest_ec12 is not None else 'WAIT'} "
-                f"| pH={packet.values['pH_drain_PC']:.3f} "
-                f"pH+12h={latest_ph12 if latest_ph12 is not None else 'WAIT'} "
-                f"| weekly ProdA="
-                f"{latest_production if latest_production is not None else 'WAIT'} "
-                f"| raw entry={raw_entry} prediction entry={pred_entry}",
+                f"{packet.timestamp.isoformat()} | EC+12h={ec12 if math.isfinite(ec12) else 'WAIT'} "
+                f"| pH+12h={ph12 if math.isfinite(ph12) else 'WAIT'} "
+                f"| ProdA advisory={proda if math.isfinite(proda) else 'OFF/WAIT'} "
+                f"| hourly completeness={hourly_completeness if math.isfinite(hourly_completeness) else 0:.3f} "
+                f"| raw={raw_entry} pred={pred_entry}",
                 flush=True,
             )
-
-            receiver.send_at("AT+PRECV=65535", 0.05)
-
+            receiver.restart_receive()
             if args.max_packets is not None and accepted >= args.max_packets:
                 break
     finally:

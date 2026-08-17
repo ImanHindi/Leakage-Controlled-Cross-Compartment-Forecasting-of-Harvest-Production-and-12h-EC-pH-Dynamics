@@ -1,7 +1,27 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
-title: "Towards Smart and Sustainable Agriculture in Water-Scarce Jordan — Part II"
+message: "If you use this repository, please cite the associated manuscript and the archived software release."
+title: "Leakage-Controlled Cross-Compartment Forecasting of Harvest Production and 12-Hour EC/pH Dynamics with Edge Computing Benchmarking"
+type: software
 version: 1.0.0
+date-released: 2026-08-17
 doi: 10.5281/zenodo.21645524
-date-released: 2026-07-28
-url: "https://github.com/ImanHindi/Towards-Smart-and-Sustainable-Agriculture-in-Jordan_Part-II"
+repository-code: "https://github.com/ImanHindi/Towards-Smart-and-Sustainable-Agriculture-in-Jordan_Part-II"
+authors:
+  - family-names: Hindi
+    given-names: Iman
+    affiliation: "Al Hussein Technical University, Amman, Jordan"
+  - family-names: Al-Zaareer
+    given-names: Khalid
+    affiliation: "Al Hussein Technical University, Amman, Jordan"
+preferred-citation:
+  type: article
+  title: "Leakage-Controlled Cross-Compartment Forecasting of Harvest Production and 12-Hour EC/pH Dynamics with Edge Computing Benchmarking"
+  authors:
+    - family-names: Hindi
+      given-names: Iman
+      affiliation: "Al Hussein Technical University, Amman, Jordan"
+    - family-names: Al-Zaareer
+      given-names: Khalid
+      affiliation: "Al Hussein Technical University, Amman, Jordan"
+  year: 2026
+  notes: "Final manuscript V5 prepared for journal submission."

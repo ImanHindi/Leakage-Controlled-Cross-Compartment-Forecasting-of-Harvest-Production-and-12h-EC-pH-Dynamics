@@ -1,0 +1,10 @@
+Paper 2: align repository with final v4 analysis and manuscript V5
+
+- add executed v4 leakage-controlled cross-compartment notebook
+- add final Extra Trees, HGB EC, and Ridge pH pipelines
+- add held-out AICU predictions, robustness analyses, and source-of-truth tables
+- add definitive Raspberry Pi 4 benchmark evidence
+- update LoRa/ThingSpeak/Power BI advisory deployment adapter
+- remove stale v3 outputs, raw data copies, environments, caches, and obsolete model descriptions
+- add release validator, SHA-256 manifest, and final submission checklist
+- add CITATION.cff with confirmed two-author metadata and remove obsolete authorship references

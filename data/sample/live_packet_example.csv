@@ -1,4 +1,2 @@
-Tair,Rhair,CO2air,Tot_PAR,EC_drain_PC,pH_drain_PC,Cum_irr
-25.4,68.2,430,115.6,2.18,5.82,14.3
-25.6,67.9,432,118.2,2.17,5.81,14.6
-25.8,67.5,435,121.0,2.16,5.80,14.9
+timestamp,Tair,Rhair,CO2air,Tot_PAR,Tot_PAR_Lamps,HumDef,EC_drain_PC,pH_drain_PC,Cum_irr
+2026-08-17T10:00:00+03:00,24.8,67.5,,115.0,,,1.85,6.10,12.4

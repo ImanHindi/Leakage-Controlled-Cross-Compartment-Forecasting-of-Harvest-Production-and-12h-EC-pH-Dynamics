@@ -1,8 +1,8 @@
 {
-  "last_harvest_timestamp": null,
-  "previous_production_values": []
-<<<<<<< HEAD
+  "crop_start_timestamp": "2026-05-01T00:00:00+03:00",
+  "last_harvest_timestamp": "2026-06-01T08:00:00+03:00",
+  "harvest_index": 1,
+  "previous_production_values": [
+    0.75
+  ]
 }
-=======
-}
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb

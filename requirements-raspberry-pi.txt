@@ -1,5 +1,11 @@
--r requirements.txt
-<<<<<<< HEAD
-pyserial==3.5
-=======
->>>>>>> f20272c31159b9f5b07403c4aee6aad7607c46cb
+# Runtime dependencies for benchmark/live advisory inference.
+# The final Pi benchmark ran on Python 3.13.5. The original benchmark environment
+# JSON did not record the installed scikit-learn version; the updated benchmark
+# script records package versions on future runs.
+joblib>=1.3,<2
+numpy>=1.24,<3
+pandas>=2.0,<3
+psutil>=5.9,<8
+pyserial>=3.5,<4
+requests>=2.31,<3
+scikit-learn>=1.6,<1.8

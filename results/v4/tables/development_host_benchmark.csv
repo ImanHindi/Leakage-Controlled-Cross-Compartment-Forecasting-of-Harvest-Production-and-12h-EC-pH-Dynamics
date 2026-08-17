@@ -1,0 +1,4 @@
+artifact,platform,machine,processor,python,repeats,median_ms,mean_ms,p95_ms,max_ms,rss_before_MB,rss_after_MB,python_peak_alloc_MB,mean_cpu_percent
+Production,Windows-11-10.0.26200-SP0,AMD64,"Intel64 Family 6 Model 170 Stepping 4, GenuineIntel",3.12.13,1000,98.45185000000001,99.1199644,108.49126999999999,190.0437,315.441152,316.522496,0.936968,99.448
+EC,Windows-11-10.0.26200-SP0,AMD64,"Intel64 Family 6 Model 170 Stepping 4, GenuineIntel",3.12.13,1000,17.6847,17.956457699999998,22.447555,24.6554,316.112896,316.112896,0.229356,1623.4798
+pH,Windows-11-10.0.26200-SP0,AMD64,"Intel64 Family 6 Model 170 Stepping 4, GenuineIntel",3.12.13,1000,2.6965,2.9529393,4.1995249999999995,7.6334,316.112896,316.112896,0.060594,1.5744
