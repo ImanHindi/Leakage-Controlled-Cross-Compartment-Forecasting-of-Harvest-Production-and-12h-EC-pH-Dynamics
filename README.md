@@ -14,7 +14,7 @@ The predictive evaluation is intentionally separated at the greenhouse-compartme
 - **Final evaluation:** the selected specification is refitted on all development compartments and evaluated once on AICU.
 - **Deployment assessment:** target-device benchmarking and live HTU advisory execution occur after model selection and are not treated as lettuce-specific predictive validation.
 
-The exact numeric source of truth used to align the repository and manuscript is:
+The exact numeric source is:
 
 `results/v4/tables/FINAL_MANUSCRIPT_SOURCE_OF_TRUTH.csv`
 
@@ -117,7 +117,7 @@ The live script in `raspberry_pi/` loads the **same frozen final pipelines** and
 HTU sensors → ESP32/LoRa P2P → Raspberry Pi → model inference → ThingSpeak → Power BI
 ```
 
-This component is an **engineering integration and advisory-monitoring demonstration**. The AGC-trained models have not been prospectively validated for lettuce, and their live outputs must not be interpreted as lettuce-specific predictive accuracy or autonomous nutrient-control performance. Missing or non-equivalent HTU variables are explicitly logged as interface adaptations; no such mapping is used to create the manuscript's quantitative AICU results.
+This component is an **engineering integration and advisory-monitoring demonstration**. The AGC-trained models have not been prospectively validated for lettuce, and their live outputs must not be interpreted as lettuce-specific predictive accuracy or autonomous nutrient-control performance.
 
 Copy the example configuration and keep secrets local:
 
@@ -152,6 +152,7 @@ The validator checks the final model families, feature counts, primary manuscrip
 
 ## Citation
 
-The confirmed Paper 2 author set is **Iman Hindi and Khalid Al-Zaareer**. Citation metadata are provided in [`CITATION.cff`](CITATION.cff). Please cite the associated manuscript together with the versioned Zenodo software archive (`10.5281/zenodo.21645524`).
+Paper authors are **Iman Hindi and Khalid Al-Zaareer**. Citation metadata are provided in [`CITATION.cff`](CITATION.cff). Please cite the associated manuscript together with the versioned Zenodo software archive (`10.5281/zenodo.21645524`).
 
 ## License
+MIT License
