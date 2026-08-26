@@ -155,5 +155,3 @@ The validator checks the final model families, feature counts, primary manuscrip
 The confirmed Paper 2 author set is **Iman Hindi and Khalid Al-Zaareer**. Citation metadata are provided in [`CITATION.cff`](CITATION.cff). Please cite the associated manuscript together with the versioned Zenodo software archive (`10.5281/zenodo.21645524`).
 
 ## License
-
-No software license is imposed automatically by this package. See `LICENSE_NOTE.md` and confirm institutional/co-author requirements before adding a public repository license.
