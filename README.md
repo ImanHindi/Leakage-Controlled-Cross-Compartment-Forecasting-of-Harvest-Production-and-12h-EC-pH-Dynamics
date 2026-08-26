@@ -156,3 +156,6 @@ Paper authors are **Iman Hindi and Khalid Al-Zaareer**. Citation metadata are pr
 
 ## License
 MIT License
+Repository-authored code and documentation are provided under the MIT License, as stated in LICENSE.md. The MIT License permits use, modification, distribution, and commercial reuse of the licensed repository materials, subject to its terms and the retention of the required copyright and license notices.
+
+Third-party datasets and materials are not covered by the MIT License. In particular, data from the Autonomous Greenhouse Challenge are not redistributed through this repository and remain subject to the rights, licenses, and terms established by their original providers.
