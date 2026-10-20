@@ -131,7 +131,7 @@ See `raspberry_pi/README_live_lora_models.md` for details.
 
 ## Dashboard
 
-`dashboard/LiveGreenHouseMonitoring.pbix` is the Power BI monitoring resource used with ThingSpeak. It visualizes live measurements and advisory model outputs. Inspect and replace local channel IDs/read keys before public use. **Never commit ThingSpeak write API keys.**
+`dashboard/LiveGreenHouseMonitoring.pbix` is the Power BI monitoring resource used with ThingSpeak. It visualizes live measurements and advisory model outputs. Inspect and replace local channel IDs/read keys before public use.
 
 ## Data and software availability
 
