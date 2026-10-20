@@ -1,4 +1,4 @@
-# Proposed CEA highlights
+highlights
 
 - Leakage-controlled evaluation isolates the final greenhouse compartment.
 - Measured harvest events are modeled without target interpolation.
