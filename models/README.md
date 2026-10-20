@@ -21,7 +21,3 @@ pH(t+12 h) = pH(t) + predicted ΔpH(t,12)
 The serialized artifacts record scikit-learn **1.4.2** as the training version. Reproducing training should use that version where possible. The final target-device benchmark was run in the working Raspberry Pi environment reported in `../raspberry_pi/results/raspberry_pi_environment_v4.json`; its original environment record did not include the installed scikit-learn package version. The updated benchmark script records package versions on future runs.
 
 If scikit-learn emits a cross-version unpickling warning, do not silently re-save or replace the artifact. Validate predictions against the frozen held-out result files before using a re-serialized copy.
-
-## Integrity
-
-Run `python ../tools/validate_release.py` from the repository root before release. SHA-256 hashes for the final artifacts are included in `../RELEASE_MANIFEST_SHA256.txt`.
