@@ -33,7 +33,3 @@ Avoid labels such as “validated lettuce yield” or “autonomous AI dosing”
 4. Remove credentials, private URLs, local paths, or cached sensitive data.
 5. Confirm measured EC/pH and predicted EC/pH are clearly distinguishable.
 6. Refresh and inspect all visuals.
-
-**Never commit ThingSpeak write API keys.**
-
-The PBIX format is binary. For long-term reproducibility, consider exporting screenshots/PDF and Power Query/PBIP resources in a future release.
