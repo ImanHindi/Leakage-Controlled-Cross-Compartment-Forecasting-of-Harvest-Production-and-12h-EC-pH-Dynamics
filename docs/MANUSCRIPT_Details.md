@@ -1,12 +1,8 @@
-# Manuscript–repository alignment (Paper 2 V5)
 
 Associated manuscript title:
 
 **Leakage-Controlled Cross-Compartment Forecasting of Harvest Production and 12-Hour EC/pH Dynamics with Edge Computing Benchmarking**
 
-This file records the repository items that support the final manuscript claims and prevents older v2/v3 artifacts from being mixed with the final v4 analysis.
-
-## Claim-to-artifact map
 
 | Manuscript component | Repository evidence |
 |---|---|
@@ -30,7 +26,3 @@ This file records the repository items that support the final manuscript claims 
 ## Final quantitative boundary
 
 Quantitative predictive validity is established only within the AGC domain using the untouched AICU compartment. The HTU NFT execution establishes target-device feasibility and systems integration only; it does not establish lettuce-specific forecast accuracy or autonomous dosing performance.
-
-## Important release check
-
-Before journal submission/public release, confirm that the **manuscript author byline and the CRediT authorship contribution statement contain the same author set**. The supplied V5 manuscript should be checked manually because repository metadata must not guess authorship.
