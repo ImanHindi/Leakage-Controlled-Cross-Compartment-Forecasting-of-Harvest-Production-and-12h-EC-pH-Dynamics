@@ -140,16 +140,6 @@ See `raspberry_pi/README_live_lora_models.md` for details.
 
 See `DATA_AVAILABILITY.md` for the repository's data-handling policy.
 
-## Release validation
-
-Before committing or creating a release, run:
-
-```bash
-python tools/validate_release.py
-```
-
-The validator checks the final model families, feature counts, primary manuscript values, Raspberry Pi benchmark identity/results, expected files, absence of raw data/environment directories, and obvious secret placeholders.
-
 ## Citation
 
 Paper authors are **Iman Hindi and Khalid Al-Zaareer**. Citation metadata are provided in [`CITATION.cff`](CITATION.cff). Please cite the associated manuscript together with the versioned Zenodo software archive (`10.5281/zenodo.21645524`).
